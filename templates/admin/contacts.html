@@ -1,74 +1,63 @@
-{% extends "base.html" %}
+{% extends "admin/layout.html" %}
 
-{% block title %}Запросы клиентов - Imperial Collection{% endblock %}
+{% block page_title %}Заявки клиентов{% endblock %}
 
 {% block content %}
-<div class="admin-page py-4">
-    <div class="container-fluid">
-        <div class="mb-4">
-            <h2><i class="bi bi-envelope me-2"></i> Запросы клиентов</h2>
-        </div>
-
-        <div class="card border-0 shadow-sm">
-            <div class="card-body p-0">
-                <div class="table-responsive">
-                    <table class="table table-hover mb-0">
-                        <thead class="table-light">
-                            <tr>
-                                <th>Дата</th>
-                                <th>Имя</th>
-                                <th>Контакты</th>
-                                <th>Сообщение</th>
-                                <th>Статус</th>
-                                <th>Действия</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for contact in contacts %}
-                            <tr class="{% if not contact.is_processed %}table-warning{% endif %}">
-                                <td><small>{{ contact.created_at.strftime('%d.%m.%Y %H:%M') }}</small></td>
-                                <td><strong>{{ contact.name }}</strong></td>
-                                <td>
-                                    <small>
-                                        <i class="bi bi-envelope me-1"></i> {{ contact.email }}<br>
-                                        {% if contact.phone %}
-                                        <i class="bi bi-telephone me-1"></i> {{ contact.phone }}
-                                        {% endif %}
-                                    </small>
-                                </td>
-                                <td><small>{{ contact.message[:100] }}{% if contact.message|length > 100 %}...{% endif %}</small></td>
-                                <td>
-                                    {% if contact.is_processed %}
-                                        <span class="badge bg-success">Обработан</span>
-                                    {% else %}
-                                        <span class="badge bg-warning">Новый</span>
-                                    {% endif %}
-                                </td>
-                                <td>
-                                    {% if not contact.is_processed %}
-                                        <form action="{{ url_for('admin_contact_process', contact_id=contact.id) }}" 
-                                              method="POST" style="display: inline;">
-                                            <button type="submit" class="btn btn-sm btn-outline-success" title="Отметить как обработанный">
-                                                <i class="bi bi-check-circle"></i>
-                                            </button>
-                                        </form>
-                                    {% else %}
-                                        <span class="text-muted">-</span>
-                                    {% endif %}
-                                </td>
-                            </tr>
+<div class="card border-0 shadow-sm">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Дата</th>
+                        <th>Отправитель</th>
+                        <th>Сообщение</th>
+                        <th>Статус</th>
+                        <th class="text-end">Действия</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for contact in contacts %}
+                    <tr class="{% if not contact.is_processed %}bg-warning-subtle{% endif %}">
+                        <td class="text-nowrap"><small>{{ contact.created_at.strftime('%d.%m.%Y %H:%M') }}</small></td>
+                        <td>
+                            <div class="fw-bold">{{ contact.name }}</div>
+                            <div class="small text-muted">{{ contact.email }}</div>
+                            {% if contact.phone %}
+                            <div class="small text-muted">{{ contact.phone }}</div>
+                            {% endif %}
+                        </td>
+                        <td><small>{{ contact.message }}</small></td>
+                        <td>
+                            {% if contact.is_processed %}
+                                <span class="badge bg-success">Обработан</span>
                             {% else %}
-                            <tr>
-                                <td colspan="6" class="text-center text-muted py-5">
-                                    <i class="bi bi-inbox" style="font-size: 3rem;"></i>
-                                    <p class="mt-2">Запросов пока нет</p>
-                                </td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
+                                <span class="badge bg-warning text-dark">Новый</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-end">
+                            {% if not contact.is_processed %}
+                                <form action="{{ url_for('admin_contact_process', contact_id=contact.id) }}" 
+                                      method="POST" style="display: inline;">
+                                    <button type="submit" class="btn btn-sm btn-outline-success" title="Отметить как обработанный">
+                                        <i class="bi bi-check-lg"></i>
+                                    </button>
+                                </form>
+                            {% else %}
+                                <span class="text-muted">-</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="5" class="text-center text-muted py-5">
+                            <i class="bi bi-inbox fs-1 d-block mb-3"></i>
+                            Запросов пока нет
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
         </div>
     </div>
 </div>

@@ -1,113 +1,102 @@
-{% extends "base.html" %}
+{% extends "admin/layout.html" %}
 
-{% block title %}Управление бронированиями - Imperial Collection{% endblock %}
+{% block page_title %}Бронирования{% endblock %}
 
 {% block content %}
-<div class="admin-page py-4">
-    <div class="container-fluid">
-        <div class="d-flex justify-content-between align-items-center mb-4">
-            <div>
-                <h2><i class="bi bi-calendar-check me-2"></i> Управление бронированиями</h2>
-            </div>
-            <div class="btn-group" role="group">
-                <a href="{{ url_for('admin_bookings', status='all') }}" 
-                   class="btn btn-{{ 'primary' if status_filter == 'all' else 'outline-primary' }}">
-                    Все
-                </a>
-                <a href="{{ url_for('admin_bookings', status='pending') }}" 
-                   class="btn btn-{{ 'warning' if status_filter == 'pending' else 'outline-warning' }}">
-                    Ожидают
-                </a>
-                <a href="{{ url_for('admin_bookings', status='confirmed') }}" 
-                   class="btn btn-{{ 'success' if status_filter == 'confirmed' else 'outline-success' }}">
-                    Подтверждены
-                </a>
-                <a href="{{ url_for('admin_bookings', status='cancelled') }}" 
-                   class="btn btn-{{ 'secondary' if status_filter == 'cancelled' else 'outline-secondary' }}">
-                    Отменены
-                </a>
-            </div>
-        </div>
+<div class="mb-4">
+    <div class="btn-group" role="group">
+        <a href="{{ url_for('admin_bookings', status='all') }}" 
+           class="btn btn-{{ 'primary' if status_filter == 'all' else 'outline-primary' }}">
+            Все
+        </a>
+        <a href="{{ url_for('admin_bookings', status='pending') }}" 
+           class="btn btn-{{ 'warning' if status_filter == 'pending' else 'outline-warning' }}">
+            Ожидают
+        </a>
+        <a href="{{ url_for('admin_bookings', status='confirmed') }}" 
+           class="btn btn-{{ 'success' if status_filter == 'confirmed' else 'outline-success' }}">
+            Подтверждены
+        </a>
+        <a href="{{ url_for('admin_bookings', status='cancelled') }}" 
+           class="btn btn-{{ 'secondary' if status_filter == 'cancelled' else 'outline-secondary' }}">
+            Отменены
+        </a>
+    </div>
+</div>
 
-        <div class="card border-0 shadow-sm">
-            <div class="card-body p-0">
-                <div class="table-responsive">
-                    <table class="table table-hover mb-0">
-                        <thead class="table-light">
-                            <tr>
-                                <th>ID</th>
-                                <th>Гость</th>
-                                <th>Контакты</th>
-                                <th>Объект</th>
-                                <th>Даты</th>
-                                <th>Гостей</th>
-                                <th>Сумма</th>
-                                <th>Статус</th>
-                                <th>Действия</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for booking in bookings %}
-                            <tr>
-                                <td><code>#{{ booking.id }}</code></td>
-                                <td><strong>{{ booking.guest_name }}</strong></td>
-                                <td>
-                                    <small>
-                                        <i class="bi bi-envelope me-1"></i> {{ booking.guest_email }}<br>
-                                        <i class="bi bi-telephone me-1"></i> {{ booking.guest_phone }}
-                                    </small>
-                                </td>
-                                <td>{{ booking.property.name }}</td>
-                                <td>
-                                    <small>
-                                        {{ booking.check_in }}<br>
-                                        {{ booking.check_out }}
-                                    </small>
-                                </td>
-                                <td>{{ booking.guests_count }}</td>
-                                <td><strong>{{ booking.total_price|format_price }} ₽</strong></td>
-                                <td>
-                                    {% if booking.status == 'pending' %}
-                                        <span class="badge bg-warning">Ожидает</span>
-                                    {% elif booking.status == 'confirmed' %}
-                                        <span class="badge bg-success">Подтверждено</span>
-                                    {% else %}
-                                        <span class="badge bg-secondary">Отменено</span>
-                                    {% endif %}
-                                </td>
-                                <td>
-                                    {% if booking.status == 'pending' %}
-                                        <div class="btn-group btn-group-sm" role="group">
-                                            <form action="{{ url_for('admin_booking_confirm', booking_id=booking.id) }}" 
-                                                  method="POST" style="display: inline;">
-                                                <button type="submit" class="btn btn-success" title="Подтвердить">
-                                                    <i class="bi bi-check-circle"></i>
-                                                </button>
-                                            </form>
-                                            <form action="{{ url_for('admin_booking_cancel', booking_id=booking.id) }}" 
-                                                  method="POST" style="display: inline;">
-                                                <button type="submit" class="btn btn-outline-danger" title="Отменить">
-                                                    <i class="bi bi-x-circle"></i>
-                                                </button>
-                                            </form>
-                                        </div>
-                                    {% else %}
-                                        <span class="text-muted">-</span>
-                                    {% endif %}
-                                </td>
-                            </tr>
+<div class="card border-0 shadow-sm">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>ID</th>
+                        <th>Гость</th>
+                        <th>Объект</th>
+                        <th>Даты</th>
+                        <th>Сумма</th>
+                        <th>Статус</th>
+                        <th class="text-end">Действия</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for booking in bookings %}
+                    <tr>
+                        <td><code>#{{ booking.id }}</code></td>
+                        <td>
+                            <div class="fw-bold">{{ booking.guest_name }}</div>
+                            <div class="small text-muted">
+                                <i class="bi bi-telephone me-1"></i> {{ booking.guest_phone }}
+                            </div>
+                        </td>
+                        <td>{{ booking.property.name }}</td>
+                        <td>
+                            <div class="small">
+                                {{ booking.check_in }} — {{ booking.check_out }}
+                            </div>
+                            <div class="small text-muted">{{ booking.guests_count }} чел.</div>
+                        </td>
+                        <td class="fw-bold">{{ booking.total_price|format_price }} ₽</td>
+                        <td>
+                            {% if booking.status == 'pending' %}
+                                <span class="badge bg-warning text-dark">Ожидает</span>
+                            {% elif booking.status == 'confirmed' %}
+                                <span class="badge bg-success">Подтверждено</span>
                             {% else %}
-                            <tr>
-                                <td colspan="9" class="text-center text-muted py-5">
-                                    <i class="bi bi-calendar-x" style="font-size: 3rem;"></i>
-                                    <p class="mt-2">Бронирований не найдено</p>
-                                </td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
+                                <span class="badge bg-secondary">Отменено</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-end">
+                            {% if booking.status == 'pending' %}
+                                <div class="btn-group btn-group-sm" role="group">
+                                    <form action="{{ url_for('admin_booking_confirm', booking_id=booking.id) }}" 
+                                          method="POST" style="display: inline;">
+                                        <button type="submit" class="btn btn-success" title="Подтвердить">
+                                            <i class="bi bi-check-lg"></i>
+                                        </button>
+                                    </form>
+                                    <form action="{{ url_for('admin_booking_cancel', booking_id=booking.id) }}" 
+                                          method="POST" style="display: inline;">
+                                        <button type="submit" class="btn btn-outline-danger" title="Отменить">
+                                            <i class="bi bi-x-lg"></i>
+                                        </button>
+                                    </form>
+                                </div>
+                            {% else %}
+                                <span class="text-muted">-</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="7" class="text-center text-muted py-5">
+                            <i class="bi bi-inbox fs-1 d-block mb-3"></i>
+                            Бронирований не найдено
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
         </div>
     </div>
 </div>

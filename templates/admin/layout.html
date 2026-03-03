@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    {% if site_settings and site_settings.favicon_url %}
+    <link rel="icon" type="image/x-icon" href="{{ site_settings.favicon_url }}">
+    {% endif %}
+    <title>{% block title %}Админ-панель{% endblock %}</title>
+    <!-- Bootstrap 5 -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet">
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <!-- Admin CSS -->
+    <link href="{{ url_for('static', filename='css/admin.css') }}" rel="stylesheet">
+    {% block extra_css %}{% endblock %}
+</head>
+<body>
+    <div id="wrapper">
+        <!-- Sidebar -->
+        <div id="sidebar-wrapper">
+            <div class="sidebar-heading">
+                <i class="bi bi-shield-lock me-2"></i> {{ site_settings.site_name if site_settings else 'Imperial' }}
+            </div>
+            <div class="list-group list-group-flush mt-3">
+                <a href="{{ url_for('admin_dashboard') }}" class="list-group-item list-group-item-action {% if request.endpoint == 'admin_dashboard' %}active{% endif %}">
+                    <i class="bi bi-speedometer2"></i> Обзор
+                </a>
+
+                <a class="list-group-item list-group-item-action" data-bs-toggle="collapse" href="#propertiesSubmenu" role="button" aria-expanded="false" aria-controls="propertiesSubmenu">
+                    <i class="bi bi-house-door"></i> Объекты <i class="bi bi-chevron-down ms-auto" style="font-size: 0.8em;"></i>
+                </a>
+                <div class="collapse {% if 'property' in request.endpoint or 'add_property' in request.endpoint %}show{% endif %}" id="propertiesSubmenu">
+                    <a href="{{ url_for('admin_properties') }}" class="list-group-item list-group-item-action ps-5 py-2 small {% if 'admin_properties' in request.endpoint or 'admin_property_edit' in request.endpoint %}active{% endif %}">
+                        <i class="bi bi-list-ul me-2"></i> Все объекты
+                    </a>
+                    <a href="{{ url_for('add_property') }}" class="list-group-item list-group-item-action ps-5 py-2 small {% if 'add_property' in request.endpoint %}active{% endif %}">
+                        <i class="bi bi-plus-circle me-2"></i> Добавить объект
+                    </a>
+                </div>
+
+                <a href="{{ url_for('admin_bookings') }}" class="list-group-item list-group-item-action {% if 'booking' in request.endpoint %}active{% endif %}">
+                    <i class="bi bi-calendar-check"></i> Бронирования
+                </a>
+                <a href="{{ url_for('admin_contacts') }}" class="list-group-item list-group-item-action {% if 'contact' in request.endpoint %}active{% endif %}">
+                    <i class="bi bi-envelope"></i> Заявки
+                </a>
+                
+                <a href="{{ url_for('admin_reviews') }}" class="list-group-item list-group-item-action {% if 'reviews' in request.endpoint %}active{% endif %}">
+                    <i class="bi bi-star"></i> Отзывы
+                </a>
+                
+                <a href="{{ url_for('admin_settings') }}" class="list-group-item list-group-item-action {% if 'settings' in request.endpoint %}active{% endif %}">
+                    <i class="bi bi-gear"></i> Настройки
+                </a>
+                
+                <a class="list-group-item list-group-item-action" data-bs-toggle="collapse" href="#dictionariesSubmenu" role="button" aria-expanded="false" aria-controls="dictionariesSubmenu">
+                    <i class="bi bi-journal-bookmark"></i> Справочники <i class="bi bi-chevron-down ms-auto" style="font-size: 0.8em;"></i>
+                </a>
+                <div class="collapse {% if 'dictionaries' in request.endpoint %}show{% endif %}" id="dictionariesSubmenu">
+                    <a href="{{ url_for('admin_property_types') }}" class="list-group-item list-group-item-action ps-5 py-2 small {% if 'property_types' in request.endpoint %}active{% endif %}">
+                        <i class="bi bi-collection me-2"></i> Типы объектов
+                    </a>
+                </div>
+                
+                <div class="mt-5 border-top border-secondary pt-3 mx-3 mb-2 text-muted small text-uppercase">Система</div>
+                
+                <a href="{{ url_for('admin_profile') }}" class="list-group-item list-group-item-action {% if 'profile' in request.endpoint %}active{% endif %}">
+                    <i class="bi bi-person-badge"></i> Личный кабинет
+                </a>
+                
+                <a href="{{ url_for('index') }}" class="list-group-item list-group-item-action" target="_blank">
+                    <i class="bi bi-box-arrow-up-right"></i> На сайт
+                </a>
+                <a href="{{ url_for('logout') }}" class="list-group-item list-group-item-action text-danger">
+                    <i class="bi bi-power"></i> Выйти
+                </a>
+            </div>
+        </div>
+
+        <!-- Page Content -->
+        <div id="page-content-wrapper">
+            <nav class="admin-navbar">
+                <h4 class="mb-0 text-dark">{% block page_title %}Панель управления{% endblock %}</h4>
+                <div class="d-flex align-items-center">
+                    <a href="{{ url_for('admin_profile') }}" class="text-decoration-none me-3 text-secondary">
+                        <i class="bi bi-person-circle me-1"></i>
+                        {{ session.get('username', 'Admin') }}
+                    </a>
+                </div>
+            </nav>
+
+            <div class="admin-content">
+                <!-- Flash Messages -->
+                {% with messages = get_flashed_messages(with_categories=true) %}
+                    {% if messages %}
+                        {% for category, message in messages %}
+                            <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+                                {{ message }}
+                                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                            </div>
+                        {% endfor %}
+                    {% endif %}
+                {% endwith %}
+
+                {% block content %}{% endblock %}
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    {% block extra_js %}{% endblock %}
+</body>
+</html>

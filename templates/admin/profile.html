@@ -1,0 +1,75 @@
+{% extends "admin/layout.html" %}
+
+{% block content %}
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2">Личный кабинет</h1>
+</div>
+
+<div class="row">
+    <div class="col-md-8">
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0">Основная информация</h5>
+            </div>
+            <div class="card-body">
+                <form method="POST">
+                    <div class="mb-3">
+                        <label class="form-label">Имя пользователя</label>
+                        <input type="text" class="form-control" value="{{ user.username }}" disabled>
+                        <div class="form-text">Имя пользователя нельзя изменить</div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Email</label>
+                        <input type="email" name="email" class="form-control" value="{{ user.email }}" required>
+                        <div class="form-text">Email используется для восстановления доступа</div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Телефон</label>
+                        <input type="tel" name="phone" class="form-control" value="{{ user.phone if user.phone else '' }}" placeholder="+7 (999) 000-00-00">
+                    </div>
+
+                    <hr class="my-4">
+                    
+                    <h5 class="mb-3">Смена пароля</h5>
+                    <div class="alert alert-info">
+                        Оставьте поля пустыми, если не хотите менять пароль
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Текущий пароль</label>
+                        <input type="password" name="current_password" class="form-control" autocomplete="current-password">
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Новый пароль</label>
+                            <input type="password" name="new_password" class="form-control" autocomplete="new-password">
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Подтверждение пароля</label>
+                            <input type="password" name="confirm_password" class="form-control" autocomplete="new-password">
+                        </div>
+                    </div>
+                    
+                    <button type="submit" class="btn btn-primary">Сохранить изменения</button>
+                </form>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">Информация о доступе</h5>
+            </div>
+            <div class="card-body">
+                <p><strong>Роль:</strong> {% if user.is_admin %}Администратор{% else %}Пользователь{% endif %}</p>
+                <p><strong>Дата регистрации:</strong> {{ user.created_at.strftime('%d.%m.%Y') }}</p>
+                <p><strong>Последний вход:</strong> В текущей сессии</p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

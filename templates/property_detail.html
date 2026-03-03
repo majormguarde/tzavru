@@ -5,17 +5,47 @@
 {% block content %}
 <div class="property-detail-page">
     <!-- Hero -->
-    <div class="property-hero" style="background-image: url('{{ property.image_url }}')">
+    <div class="property-hero" style="position: relative; overflow: hidden;">
+        <!-- Carousel Background -->
+        <div id="propertyHeroCarousel" class="carousel slide property-hero-carousel" data-bs-ride="carousel" data-bs-interval="4000" data-bs-pause="hover">
+            <div class="carousel-inner h-100">
+                <!-- Main Image (Index 0) -->
+                <div class="carousel-item active h-100">
+                    <img src="{{ property.image_url }}" class="d-block w-100 h-100" style="object-fit: cover;" alt="{{ property.name }}">
+                </div>
+                <!-- Gallery Images (Index 1+) -->
+                {% if property.gallery_urls %}
+                    {% for img_url in property.gallery_urls|from_json %}
+                    <div class="carousel-item h-100">
+                        <img src="{{ img_url }}" class="d-block w-100 h-100" style="object-fit: cover;" alt="Gallery Image">
+                    </div>
+                    {% endfor %}
+                {% endif %}
+            </div>
+            {% if property.gallery_urls %}
+            <button class="carousel-control-prev" type="button" data-bs-target="#propertyHeroCarousel" data-bs-slide="prev" style="z-index: 5;">
+                <span class="carousel-control-prev-icon" aria-hidden="true"></span>
+                <span class="visually-hidden">Previous</span>
+            </button>
+            <button class="carousel-control-next" type="button" data-bs-target="#propertyHeroCarousel" data-bs-slide="next" style="z-index: 5;">
+                <span class="carousel-control-next-icon" aria-hidden="true"></span>
+                <span class="visually-hidden">Next</span>
+            </button>
+            {% endif %}
+        </div>
+
         <div class="hero-overlay"></div>
-        <div class="container h-100 d-flex align-items-center">
+        <div class="container h-100 d-flex align-items-center property-hero-content">
             <div class="text-white">
                 <div class="property-badge mb-3">
                     {% if property.property_type == 'hunting' %}
                         <i class="bi bi-crosshair"></i> Охотничий стан
                     {% elif property.property_type == 'mansion' %}
                         <i class="bi bi-building"></i> Премиальная резиденция
+                    {% elif property.property_type == 'village' %}
+                        <i class="bi bi-house-heart"></i> Традиции
                     {% else %}
-                        <i class="bi bi-house-heart"></i> Деревенский отдых
+                        <i class="bi bi-star"></i> {{ property.property_type }}
                     {% endif %}
                 </div>
                 <h1 class="display-4 mb-3">{{ property.name }}</h1>
@@ -25,6 +55,79 @@
             </div>
         </div>
     </div>
+
+    <!-- Gallery Thumbs -->
+    {% set gallery = property.gallery_urls|from_json %}
+    {% if gallery %}
+    <div class="bg-dark py-3">
+        <div class="container">
+            <div class="d-flex flex-wrap justify-content-center gap-2">
+                <!-- Main Image Thumb (Index 0) -->
+                <div class="gallery-thumb-wrapper active" onclick="goToSlide(0, this)">
+                    <img src="{{ property.image_url }}" alt="{{ property.name }}" class="img-fluid">
+                </div>
+                
+                <!-- Gallery Thumbs (Index 1+) -->
+                {% for img_url in gallery %}
+                <div class="gallery-thumb-wrapper" onclick="goToSlide({{ loop.index }}, this)">
+                    <img src="{{ img_url }}" alt="Gallery Image" class="img-fluid">
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+    
+    <style>
+        .gallery-thumb-wrapper {
+            width: 100px;
+            height: 70px;
+            overflow: hidden;
+            border-radius: 4px;
+            cursor: pointer;
+            border: 2px solid transparent;
+            transition: all 0.2s ease;
+            opacity: 0.7;
+        }
+        .gallery-thumb-wrapper:hover, .gallery-thumb-wrapper.active {
+            border-color: #fff;
+            transform: scale(1.1);
+            opacity: 1;
+            z-index: 10;
+        }
+        .gallery-thumb-wrapper img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+    </style>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            var myCarousel = document.getElementById('propertyHeroCarousel');
+            if (myCarousel) {
+                // Update active thumbnail when carousel slides
+                myCarousel.addEventListener('slide.bs.carousel', function (e) {
+                    var index = e.to;
+                    document.querySelectorAll('.gallery-thumb-wrapper').forEach((el, i) => {
+                        if (i === index) {
+                            el.classList.add('active');
+                        } else {
+                            el.classList.remove('active');
+                        }
+                    });
+                });
+            }
+        });
+
+        function goToSlide(index, element) {
+            var myCarousel = document.getElementById('propertyHeroCarousel');
+            var carousel = bootstrap.Carousel.getInstance(myCarousel);
+            if (carousel) {
+                carousel.to(index);
+            }
+        }
+    </script>
+    {% endif %}
 
     <div class="container py-5">
         <!-- Quick Info -->

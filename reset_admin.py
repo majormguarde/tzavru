@@ -1,7 +1,22 @@
+from dotenv import load_dotenv
+load_dotenv()
+
 from app import app, db, User
 from werkzeug.security import generate_password_hash
+import os
 
 with app.app_context():
+    # Debug info
+    print(f"DB URI: {app.config['SQLALCHEMY_DATABASE_URI']}")
+    
+    if app.config['SQLALCHEMY_DATABASE_URI'].startswith('sqlite:///'):
+        path = app.config['SQLALCHEMY_DATABASE_URI'].replace('sqlite:///', '')
+        if not os.path.isabs(path):
+            path = os.path.join(app.instance_path, path)
+        print(f"Projected DB Path: {path}")
+
+    db.create_all()
+    
     # Удаляем старого admin
     old_admin = User.query.filter_by(username='admin').first()
     if old_admin:

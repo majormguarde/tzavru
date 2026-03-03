@@ -1,95 +1,108 @@
-{% extends "base.html" %}
+{% extends "admin/layout.html" %}
 
-{% block title %}Управление объектами - Imperial Collection{% endblock %}
+{% block page_title %}Управление объектами{% endblock %}
 
 {% block content %}
-<div class="admin-page py-4">
-    <div class="container-fluid">
-        <div class="d-flex justify-content-between align-items-center mb-4">
-            <div>
-                <h2><i class="bi bi-building me-2"></i> Управление объектами</h2>
-                <p class="text-muted mb-0">Всего объектов: {{ properties|length }}</p>
-            </div>
-            <a href="{{ url_for('admin_property_new') }}" class="btn btn-primary">
-                <i class="bi bi-plus-circle me-2"></i> Добавить объект
-            </a>
-        </div>
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <p class="text-muted mb-0">Всего объектов: {{ properties|length }}</p>
+    </div>
+    <a href="{{ url_for('add_property') }}" class="btn btn-primary">
+        <i class="bi bi-plus-circle me-2"></i> Добавить объект
+    </a>
+</div>
 
-        <div class="card border-0 shadow-sm">
-            <div class="card-body p-0">
-                <div class="table-responsive">
-                    <table class="table table-hover mb-0">
-                        <thead class="table-light">
-                            <tr>
-                                <th>Фото</th>
-                                <th>Название</th>
-                                <th>Тип</th>
-                                <th>Расположение</th>
-                                <th>Цена/ночь</th>
-                                <th>Вместимость</th>
-                                <th>Статус</th>
-                                <th>Действия</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for property in properties %}
-                            <tr>
-                                <td>
-                                    <img src="{{ property.image_url }}" alt="{{ property.name }}" 
-                                         style="width: 60px; height: 45px; object-fit: cover; border-radius: 5px;">
-                                </td>
-                                <td><strong>{{ property.name }}</strong></td>
-                                <td>
-                                    {% if property.property_type == 'hunting' %}
-                                        <span class="badge bg-success">Охота</span>
-                                    {% elif property.property_type == 'mansion' %}
-                                        <span class="badge bg-primary">Премиум</span>
-                                    {% else %}
-                                        <span class="badge bg-info">Деревня</span>
-                                    {% endif %}
-                                </td>
-                                <td>{{ property.location }}</td>
-                                <td>{{ property.price_per_night|format_price }} ₽</td>
-                                <td>{{ property.capacity }} чел.</td>
-                                <td>
-                                    {% if property.is_available %}
-                                        <span class="badge bg-success">Доступен</span>
-                                    {% else %}
-                                        <span class="badge bg-secondary">Недоступен</span>
-                                    {% endif %}
-                                </td>
-                                <td>
-                                    <div class="btn-group" role="group">
-                                        <a href="{{ url_for('property_detail', property_id=property.id) }}" 
-                                           class="btn btn-sm btn-outline-info" title="Просмотр" target="_blank">
-                                            <i class="bi bi-eye"></i>
-                                        </a>
-                                        <a href="{{ url_for('admin_property_edit', property_id=property.id) }}" 
-                                           class="btn btn-sm btn-outline-primary" title="Редактировать">
-                                            <i class="bi bi-pencil"></i>
-                                        </a>
-                                        <form action="{{ url_for('admin_property_delete', property_id=property.id) }}" 
-                                              method="POST" style="display: inline;"
-                                              onsubmit="return confirm('Вы уверены?');">
-                                            <button type="submit" class="btn btn-sm btn-outline-danger" title="Удалить">
-                                                <i class="bi bi-trash"></i>
-                                            </button>
-                                        </form>
-                                    </div>
-                                </td>
-                            </tr>
+<div class="card border-0 shadow-sm">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th style="width: 80px;">Фото</th>
+                        <th>Название</th>
+                        <th>Тип</th>
+                        <th>Расположение</th>
+                        <th>Цена/ночь</th>
+                        <th>Вместимость</th>
+                        <th>Статус</th>
+                        <th class="text-end">Действия</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for property in properties %}
+                    <tr>
+                        <td>
+                            <div class="d-flex flex-wrap gap-1 align-items-center" style="max-width: 200px;">
+                                {% if property.image_url %}
+                                <div class="position-relative">
+                                    <img src="{{ property.image_url }}" alt="Main" 
+                                         class="rounded border border-primary border-2" style="width: 60px; height: 45px; object-fit: cover;" title="Главное фото">
+                                    <span class="position-absolute top-0 start-0 translate-middle badge rounded-pill bg-primary" style="font-size: 0.5rem;">
+                                        <i class="bi bi-star-fill"></i>
+                                    </span>
+                                </div>
+                                {% endif %}
+                                {% if property.gallery_urls %}
+                                    {% for img_url in property.gallery_urls|from_json %}
+                                    <img src="{{ img_url }}" alt="Gallery" 
+                                         class="rounded border" style="width: 30px; height: 22px; object-fit: cover; opacity: 0.8;" title="Галерея">
+                                    {% endfor %}
+                                {% endif %}
+                            </div>
+                        </td>
+                        <td>
+                            <strong>{{ property.name }}</strong>
+                            <small class="text-muted d-block">
+                                {{ type_map.get(property.property_type, property.property_type) }}
+                            </small>
+                        </td>
+                        <td>
+                            {% if property.location %}
+                                <i class="bi bi-geo-alt"></i> {{ property.location }}
                             {% else %}
-                            <tr>
-                                <td colspan="8" class="text-center text-muted py-5">
-                                    <i class="bi bi-inbox" style="font-size: 3rem;"></i>
-                                    <p class="mt-2">Объекты не найдены</p>
-                                </td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
+                                -
+                            {% endif %}
+                        </td>
+                        <td>{{ property.location }}</td>
+                        <td>{{ property.price_per_night|format_price }} ₽</td>
+                        <td>{{ property.capacity }} чел.</td>
+                        <td>
+                            {% if property.is_available %}
+                                <span class="badge bg-success">Доступен</span>
+                            {% else %}
+                                <span class="badge bg-secondary">Недоступен</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-end">
+                            <div class="btn-group" role="group">
+                                <a href="{{ url_for('property_detail', id=property.id) }}" 
+                                   class="btn btn-sm btn-outline-info" title="Просмотр" target="_blank">
+                                    <i class="bi bi-eye"></i>
+                                </a>
+                                <a href="{{ url_for('admin_property_edit', property_id=property.id) }}" 
+                                   class="btn btn-sm btn-outline-primary" title="Редактировать">
+                                    <i class="bi bi-pencil"></i>
+                                </a>
+                                <form action="{{ url_for('admin_property_delete', property_id=property.id) }}" 
+                                      method="POST" style="display: inline;"
+                                      onsubmit="return confirm('Вы уверены?');">
+                                    <button type="submit" class="btn btn-sm btn-outline-danger" title="Удалить">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                </form>
+                            </div>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="8" class="text-center text-muted py-5">
+                            <i class="bi bi-inbox fs-1 d-block mb-3"></i>
+                            Объекты не найдены
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
         </div>
     </div>
 </div>

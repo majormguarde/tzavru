@@ -4,6 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="description" content="Imperial Collection - Три грани настоящего отдыха в Псковской области">
+    {% if site_settings and site_settings.favicon_url %}
+    <link rel="icon" type="image/x-icon" href="{{ site_settings.favicon_url }}">
+    {% endif %}
     <title>{% block title %}Imperial Collection: Псковский берег{% endblock %}</title>
     
     <!-- Bootstrap 5 CSS -->
@@ -22,7 +25,12 @@
     <nav class="navbar navbar-expand-lg navbar-dark fixed-top" id="mainNav">
         <div class="container">
             <a class="navbar-brand" href="{{ url_for('index') }}">
-                <i class="bi bi-tree"></i> Imperial Collection
+                {% if site_settings and site_settings.logo_url %}
+                    <img src="{{ site_settings.logo_url }}" alt="{{ site_settings.site_name }}" style="height: 40px; margin-right: 10px;">
+                {% else %}
+                    <i class="bi bi-tree"></i> 
+                {% endif %}
+                {{ site_settings.site_name if site_settings else 'Imperial Collection' }}
             </a>
             <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
                 <span class="navbar-toggler-icon"></span>
@@ -39,8 +47,8 @@
                         <a class="nav-link" href="{{ url_for('index') }}#contact">Контакты</a>
                     </li>
                 </ul>
-                <a href="tel:+7-900-123-45-67" class="btn btn-outline-light">
-                    <i class="bi bi-telephone"></i> +7 900 123-45-67
+                <a href="tel:{{ site_settings.phone_main if site_settings else '+7-900-123-45-67' }}" class="btn btn-outline-light">
+                    <i class="bi bi-telephone"></i> {{ site_settings.phone_main if site_settings else '+7 900 123-45-67' }}
                 </a>
             </div>
         </div>
@@ -70,36 +78,68 @@
         <div class="container">
             <div class="row">
                 <div class="col-lg-4 mb-4">
-                    <h5 class="mb-3">Imperial Collection</h5>
-                    <p class="text-muted">Три грани настоящего отдыха в Псковской области</p>
+                    <h5 class="mb-3">{{ site_settings.site_name if site_settings else 'Imperial Collection' }}</h5>
+                    <p class="text-muted">{{ site_settings.slogan if site_settings and site_settings.slogan else 'Три грани настоящего отдыха в Псковской области' }}</p>
                     <div class="social-links">
-                        <a href="#" class="text-muted me-3"><i class="bi bi-facebook"></i></a>
-                        <a href="#" class="text-muted me-3"><i class="bi bi-instagram"></i></a>
-                        <a href="#" class="text-muted"><i class="bi bi-telegram"></i></a>
+                        {% if site_settings and site_settings.social_vk %}
+                            <a href="{{ site_settings.social_vk }}" class="text-muted me-3" target="_blank"><i class="bi bi-vk"></i></a>
+                        {% endif %}
+                        {% if site_settings and site_settings.social_telegram %}
+                            <a href="{{ site_settings.social_telegram }}" class="text-muted me-3" target="_blank"><i class="bi bi-telegram"></i></a>
+                        {% endif %}
+                        {% if site_settings and site_settings.social_whatsapp %}
+                            <a href="{{ site_settings.social_whatsapp }}" class="text-muted" target="_blank"><i class="bi bi-whatsapp"></i></a>
+                        {% endif %}
                     </div>
                 </div>
                 <div class="col-lg-4 mb-4">
                     <h6 class="mb-3">Контакты</h6>
-                    <p class="text-muted mb-2"><i class="bi bi-telephone me-2"></i> +7 900 123-45-67</p>
-                    <p class="text-muted mb-2"><i class="bi bi-envelope me-2"></i> info@imperial-collection.ru</p>
-                    <p class="text-muted"><i class="bi bi-geo-alt me-2"></i> Псковская область, Россия</p>
+                    <p class="text-muted mb-2">
+                        <i class="bi bi-telephone me-2"></i> 
+                        {{ site_settings.phone_main if site_settings else '+7 900 123-45-67' }}
+                    </p>
+                    {% if site_settings and site_settings.phone_secondary %}
+                    <p class="text-muted mb-2">
+                        <i class="bi bi-telephone me-2"></i> 
+                        {{ site_settings.phone_secondary }}
+                    </p>
+                    {% endif %}
+                    <p class="text-muted mb-2">
+                        <i class="bi bi-envelope me-2"></i> 
+                        {{ site_settings.email_info if site_settings else 'info@imperial-collection.ru' }}
+                    </p>
+                    <p class="text-muted">
+                        <i class="bi bi-geo-alt me-2"></i> 
+                        {{ site_settings.address if site_settings else 'Псковская область, Россия' }}
+                    </p>
+                    {% if site_settings and site_settings.map_url %}
+                    <p class="mb-0">
+                        <a href="{{ site_settings.map_url }}" target="_blank" class="text-primary text-decoration-none">
+                            <i class="bi bi-map me-2"></i> Показать на карте
+                        </a>
+                    </p>
+                    {% endif %}
                 </div>
                 <div class="col-lg-4 mb-4">
                     <h6 class="mb-3">Наши объекты</h6>
                     <ul class="list-unstyled text-muted">
-                        <li class="mb-2">Охотничий стан</li>
-                        <li class="mb-2">Резиденция в Себеже</li>
-                        <li>Деревня Остров</li>
+                        {% for property in footer_properties %}
+                        <li class="mb-2">
+                            <a href="{{ url_for('property_detail', id=property.id) }}" class="text-muted text-decoration-none hover-white">
+                                {{ property.name }}
+                            </a>
+                        </li>
+                        {% endfor %}
                     </ul>
                 </div>
             </div>
             <hr class="my-4" style="border-color: rgba(255,255,255,0.1)">
             <div class="row">
                 <div class="col-md-6 text-muted">
-                    &copy; 2024 Imperial Collection. Все права защищены.
+                    &copy; 2024 {{ site_settings.site_name if site_settings else 'Imperial Collection' }}. Все права защищены.
                 </div>
                 <div class="col-md-6 text-md-end text-muted">
-                    <a href="{{ url_for('admin_login') }}" class="text-muted">Админ-панель</a>
+                    <a href="{{ url_for('login') }}" class="text-muted">Админ-панель</a>
                 </div>
             </div>
         </div>

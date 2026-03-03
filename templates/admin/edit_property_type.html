@@ -1,0 +1,47 @@
+
+{% extends "admin/layout.html" %}
+
+{% block title %}{{ 'Редактировать' if ptype else 'Добавить' }} тип объекта{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h2>{{ 'Редактировать' if ptype else 'Добавить' }} тип объекта</h2>
+            <a href="{{ url_for('admin_property_types') }}" class="btn btn-outline-secondary">
+                <i class="bi bi-arrow-left"></i> Назад
+            </a>
+        </div>
+
+        <div class="card shadow-sm">
+            <div class="card-body">
+                <form method="POST">
+                    <div class="mb-3">
+                        <label for="name" class="form-label">Название *</label>
+                        <input type="text" class="form-control" id="name" name="name" 
+                               value="{{ ptype.name if ptype else '' }}" required>
+                        <div class="form-text">Например: "Охотничий домик", "Усадьба".</div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="slug" class="form-label">Код (Slug)</label>
+                        <input type="text" class="form-control" id="slug" name="slug" 
+                               value="{{ ptype.slug if ptype else '' }}" placeholder="Автоматически из названия">
+                        <div class="form-text">Уникальный идентификатор на латинице (например: hunting-house). Если оставить пустым, сгенерируется автоматически.</div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="description" class="form-label">Описание</label>
+                        <textarea class="form-control" id="description" name="description" rows="3">{{ ptype.description if ptype else '' }}</textarea>
+                    </div>
+
+                    <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+                        <a href="{{ url_for('admin_property_types') }}" class="btn btn-light me-md-2">Отмена</a>
+                        <button type="submit" class="btn btn-primary">Сохранить</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

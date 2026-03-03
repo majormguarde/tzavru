@@ -1,110 +1,235 @@
-{% extends "base.html" %}
+{% extends "admin/layout.html" %}
 
-{% block title %}{% if property %}Редактирование{% else %}Добавление{% endif %} объекта - Imperial Collection{% endblock %}
+{% block page_title %}
+    {% if property %}Редактирование объекта{% else %}Новый объект{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    function updateGalleryCount() {
+        const input = document.getElementById('galleryInput');
+        const count = input.files.length;
+        const label = document.getElementById('galleryCount');
+        const previewContainer = document.getElementById('newImagesPreview');
+        
+        // Update count label
+        if (count > 0) {
+            label.textContent = `Выбрано новых файлов: ${count}`;
+        } else {
+            label.textContent = '';
+        }
+        
+        // Update preview
+        previewContainer.innerHTML = ''; // Clear existing previews
+        
+        if (count > 0) {
+            Array.from(input.files).forEach((file, index) => {
+                if (!file.type.startsWith('image/')) return;
+                
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    const col = document.createElement('div');
+                    col.className = 'col-md-3 col-sm-4 col-6';
+                    
+                    col.innerHTML = `
+                        <div class="card h-100 border-success">
+                            <div class="position-relative">
+                                <img src="${e.target.result}" class="card-img-top" style="height: 120px; object-fit: cover;">
+                                <span class="position-absolute top-0 end-0 badge bg-success m-1">Новое</span>
+                            </div>
+                            <div class="card-body p-2 text-center">
+                                <small class="text-muted d-block text-truncate">${file.name}</small>
+                            </div>
+                        </div>
+                    `;
+                    previewContainer.appendChild(col);
+                }
+                reader.readAsDataURL(file);
+            });
+        }
+    }
+</script>
+{% endblock %}
 
 {% block content %}
-<div class="admin-page py-4">
-    <div class="container">
-        <div class="row justify-content-center">
-            <div class="col-lg-10">
-                <div class="card border-0 shadow-sm">
-                    <div class="card-header bg-white">
-                        <h3 class="mb-0">
-                            <i class="bi bi-{% if property %}pencil-square{% else %}plus-circle{% endif %} me-2"></i>
-                            {% if property %}Редактирование объекта{% else %}Добавление объекта{% endif %}
-                        </h3>
-                    </div>
-                    <div class="card-body">
-                        <form method="POST">
-                            <div class="row g-3">
-                                <div class="col-md-6">
-                                    <label class="form-label">Название *</label>
-                                    <input type="text" name="name" class="form-control" 
-                                           value="{{ property.name if property else '' }}" required>
-                                </div>
-                                <div class="col-md-6">
-                                    <label class="form-label">Тип объекта *</label>
-                                    <select name="property_type" class="form-select" required>
-                                        <option value="hunting" {% if property and property.property_type == 'hunting' %}selected{% endif %}>
-                                            Охотничий стан
-                                        </option>
-                                        <option value="mansion" {% if property and property.property_type == 'mansion' %}selected{% endif %}>
-                                            Премиальная резиденция
-                                        </option>
-                                        <option value="village" {% if property and property.property_type == 'village' %}selected{% endif %}>
-                                            Деревня
-                                        </option>
-                                    </select>
-                                </div>
-                                <div class="col-12">
-                                    <label class="form-label">Краткое описание *</label>
-                                    <input type="text" name="short_description" class="form-control" 
-                                           value="{{ property.short_description if property else '' }}" 
-                                           maxlength="200" required>
-                                    <small class="text-muted">Максимум 200 символов</small>
-                                </div>
-                                <div class="col-12">
-                                    <label class="form-label">Полное описание *</label>
-                                    <textarea name="full_description" class="form-control" rows="4" required>{{ property.full_description if property else '' }}</textarea>
-                                </div>
-                                <div class="col-md-6">
-                                    <label class="form-label">Расположение *</label>
-                                    <input type="text" name="location" class="form-control" 
-                                           value="{{ property.location if property else '' }}" required>
-                                </div>
-                                <div class="col-md-6">
-                                    <label class="form-label">URL изображения *</label>
-                                    <input type="url" name="image_url" class="form-control" 
-                                           value="{{ property.image_url if property else '' }}" required>
-                                </div>
-                                <div class="col-md-4">
-                                    <label class="form-label">Цена за ночь (₽) *</label>
-                                    <input type="number" name="price_per_night" class="form-control" 
-                                           value="{{ property.price_per_night if property else '' }}" 
-                                           min="0" step="100" required>
-                                </div>
-                                <div class="col-md-4">
-                                    <label class="form-label">Вместимость (чел.) *</label>
-                                    <input type="number" name="capacity" class="form-control" 
-                                           value="{{ property.capacity if property else '' }}" 
-                                           min="1" required>
-                                </div>
-                                <div class="col-md-4">
-                                    <label class="form-label">Статус</label>
-                                    <div class="form-check mt-2">
-                                        <input type="checkbox" name="is_available" class="form-check-input" 
-                                               id="is_available" {% if not property or property.is_available %}checked{% endif %}>
-                                        <label class="form-check-label" for="is_available">Доступен для бронирования</label>
-                                    </div>
-                                </div>
-                                
-                                <div class="col-md-6">
-                                    <label class="form-label">Удобства (по одному на строку)</label>
-                                    <textarea name="amenities" class="form-control" rows="5" placeholder="Баня&#10;Мангал&#10;Бассейн">{% if property %}{% for amenity in property.amenities|from_json %}{{ amenity }}
-{% endfor %}{% endif %}</textarea>
-                                </div>
-                                <div class="col-md-6">
-                                    <label class="form-label">Особенности (по одному на строку)</label>
-                                    <textarea name="features" class="form-control" rows="5" placeholder="Охота с егерем&#10;Рыбалка&#10;Закрытая территория">{% if property %}{% for feature in property.features|from_json %}{{ feature }}
-{% endfor %}{% endif %}</textarea>
-                                </div>
-                                
-                                <div class="col-12">
-                                    <hr>
-                                    <div class="d-flex justify-content-between">
-                                        <a href="{{ url_for('admin_properties') }}" class="btn btn-secondary">
-                                            <i class="bi bi-arrow-left me-2"></i> Отмена
-                                        </a>
-                                        <button type="submit" class="btn btn-primary">
-                                            <i class="bi bi-check-circle me-2"></i> 
-                                            {% if property %}Сохранить изменения{% else %}Создать объект{% endif %}
-                                        </button>
-                                    </div>
-                                </div>
+<div class="row justify-content-center">
+    <div class="col-lg-10">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body">
+                <form method="POST" enctype="multipart/form-data">
+                    <div class="row g-3">
+                        <div class="col-md-8">
+                            <label class="form-label">Название *</label>
+                            <input type="text" name="name" class="form-control" 
+                                   value="{{ property.name if property else '' }}" required>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Тип объекта *</label>
+                            <div class="input-group">
+                                <input type="text" name="property_type" id="property_type_input" class="form-control" 
+                                       value="{{ current_type_name }}" 
+                                       required autocomplete="off" placeholder="Выберите или введите...">
+                                <button class="btn btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                                    <i class="bi bi-list"></i>
+                                </button>
+                                <ul class="dropdown-menu dropdown-menu-end" style="max-height: 300px; overflow-y: auto;">
+                                    {% for type in unique_types %}
+                                    <li><a class="dropdown-item" href="#" onclick="document.getElementById('property_type_input').value = '{{ type.name }}'; return false;">{{ type.name }}</a></li>
+                                    {% endfor %}
+                                </ul>
                             </div>
-                        </form>
+                            <div class="form-text">Выберите из списка или введите новый тип вручную</div>
+                        </div>
+                        
+                        <div class="col-12">
+                            <label class="form-label">Краткое описание *</label>
+                            <input type="text" name="short_description" class="form-control" 
+                                   value="{{ property.short_description if property else '' }}" 
+                                   maxlength="200" required>
+                            <small class="text-muted">Максимум 200 символов</small>
+                        </div>
+                        
+                        <div class="col-12">
+                            <label class="form-label">Полное описание *</label>
+                            <textarea name="full_description" class="form-control" rows="5" required>{{ property.full_description if property else '' }}</textarea>
+                        </div>
+                        
+                        <div class="col-12">
+                            <label class="form-label">Локация (отображается текстом)</label>
+                            <input type="text" name="location" class="form-control" 
+                                   value="{{ property.location if property else '' }}" required>
+                        </div>
+
+                        <div class="col-md-6">
+                            <label class="form-label">Широта (Latitude)</label>
+                            <input type="number" step="any" name="latitude" class="form-control" value="{{ property.latitude if property else '' }}" placeholder="57.819...">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Долгота (Longitude)</label>
+                            <input type="number" step="any" name="longitude" class="form-control" value="{{ property.longitude if property else '' }}" placeholder="28.332...">
+                        </div>
+                        <div class="col-12">
+                            <div class="form-text">Координаты для отображения на карте. Можно взять с Яндекс.Карт (например: 57.819383, 28.332454).</div>
+                        </div>
+                        
+                    {# Unified Image Management #}
+                    <div class="col-12 mb-4">
+                        <div class="card">
+                            <div class="card-header bg-light">
+                                <h5 class="mb-0">Фотографии</h5>
+                            </div>
+                            <div class="card-body">
+                                {% if property %}
+                                <div class="alert alert-info py-2">
+                                    <small><i class="bi bi-info-circle"></i> Отметьте главное фото (радио-кнопка) или удалите ненужные (галочка "Удалить").</small>
+                                </div>
+                                <div class="row g-3 mb-3">
+                                    {# Main Image #}
+                                    {% if property.image_url %}
+                                    <div class="col-md-3 col-sm-4 col-6">
+                                        <div class="card h-100 border-primary">
+                                            <div class="position-relative">
+                                                <img src="{{ property.image_url }}" class="card-img-top" style="height: 120px; object-fit: cover;">
+                                                <span class="position-absolute top-0 end-0 badge bg-primary m-1">Главное</span>
+                                            </div>
+                                            <div class="card-body p-2 text-center">
+                                                <div class="form-check form-check-inline">
+                                                    <input class="form-check-input" type="radio" name="set_main_image" id="main_img" value="{{ property.image_url }}" checked>
+                                                    <label class="form-check-label small" for="main_img">Главное</label>
+                                                </div>
+                                                <div class="form-check form-check-inline">
+                                                    <input class="form-check-input" type="checkbox" name="delete_images" value="{{ property.image_url }}" id="del_main">
+                                                    <label class="form-check-label small text-danger" for="del_main">Удалить</label>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    {% endif %}
+                                    
+                                    {# Gallery Images #}
+                                    {% if property.gallery_urls %}
+                                        {% for img_url in property.gallery_urls|from_json %}
+                                        <div class="col-md-3 col-sm-4 col-6">
+                                            <div class="card h-100">
+                                                <img src="{{ img_url }}" class="card-img-top" style="height: 120px; object-fit: cover;">
+                                                <div class="card-body p-2 text-center">
+                                                    <div class="form-check form-check-inline">
+                                                        <input class="form-check-input" type="radio" name="set_main_image" id="gal_img_{{ loop.index }}" value="{{ img_url }}">
+                                                        <label class="form-check-label small" for="gal_img_{{ loop.index }}">Главное</label>
+                                                    </div>
+                                                    <div class="form-check form-check-inline">
+                                                        <input class="form-check-input" type="checkbox" name="delete_images" value="{{ img_url }}" id="del_gal_{{ loop.index }}">
+                                                        <label class="form-check-label small text-danger" for="del_gal_{{ loop.index }}">Удалить</label>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        {% endfor %}
+                                    {% endif %}
+                                </div>
+                                {% endif %}
+                                
+                                <div class="mb-3">
+                                    <label class="form-label fw-bold">{% if property %}Добавить фото{% else %}Загрузить фото{% endif %}</label>
+                                    <input type="file" name="images" id="galleryInput" class="form-control" accept="image/*" multiple onchange="updateGalleryCount()">
+                                    <div class="form-text">Зажмите Ctrl (Cmd), чтобы выбрать несколько файлов.</div>
+                                    <small id="galleryCount" class="fw-bold text-primary"></small>
+                                </div>
+                                
+                                <div id="newImagesPreview" class="row g-3"></div>
+                            </div>
+                        </div>
                     </div>
-                </div>
+                        
+                        <div class="col-md-4">
+                            <label class="form-label">Цена за ночь (₽) *</label>
+                            <input type="number" name="price_per_night" class="form-control" 
+                                   value="{{ property.price_per_night if property else '' }}" 
+                                   min="0" step="100" required>
+                        </div>
+                        
+                        <div class="col-md-4">
+                            <label class="form-label">Вместимость (чел.) *</label>
+                            <input type="number" name="capacity" class="form-control" 
+                                   value="{{ property.capacity if property else '' }}" 
+                                   min="1" required>
+                        </div>
+                        
+                        <div class="col-md-4">
+                            <label class="form-label">Статус</label>
+                            <div class="form-check form-switch mt-2">
+                                <input type="checkbox" name="is_available" class="form-check-input" 
+                                       id="is_available" {% if not property or property.is_available %}checked{% endif %}>
+                                <label class="form-check-label" for="is_available">Доступен</label>
+                            </div>
+                        </div>
+                        
+                        <div class="col-md-6">
+                            <label class="form-label">Удобства (по одному на строку)</label>
+                            <textarea name="amenities" class="form-control" rows="5" placeholder="Баня&#10;Мангал&#10;Бассейн">{% if property %}{% for amenity in property.amenities|from_json %}{{ amenity }}
+{% endfor %}{% endif %}</textarea>
+                        </div>
+                        
+                        <div class="col-md-6">
+                            <label class="form-label">Особенности (по одному на строку)</label>
+                            <textarea name="features" class="form-control" rows="5" placeholder="Охота с егерем&#10;Рыбалка&#10;Закрытая территория">{% if property %}{% for feature in property.features|from_json %}{{ feature }}
+{% endfor %}{% endif %}</textarea>
+                        </div>
+                        
+                        <div class="col-12 mt-4">
+                            <hr>
+                            <div class="d-flex justify-content-between">
+                                <a href="{{ url_for('admin_properties') }}" class="btn btn-secondary">
+                                    Отмена
+                                </a>
+                                <button type="submit" class="btn btn-primary">
+                                    <i class="bi bi-save me-2"></i> 
+                                    {% if property %}Сохранить{% else %}Создать{% endif %}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </form>
             </div>
         </div>
     </div>

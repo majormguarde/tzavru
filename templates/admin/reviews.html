@@ -1,0 +1,65 @@
+{% extends "admin/layout.html" %}
+
+{% block content %}
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2">Отзывы</h1>
+    <div class="btn-toolbar mb-2 mb-md-0">
+        <a href="{{ url_for('admin_review_add') }}" class="btn btn-sm btn-outline-primary">
+            <i class="bi bi-plus-lg"></i> Добавить отзыв
+        </a>
+    </div>
+</div>
+
+<div class="table-responsive">
+    <table class="table table-striped table-sm">
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Клиент</th>
+                <th>Текст</th>
+                <th>Оценка</th>
+                <th>Статус</th>
+                <th>Дата</th>
+                <th>Действия</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for review in reviews %}
+            <tr>
+                <td>{{ review.id }}</td>
+                <td>
+                    {% if review.avatar_url %}
+                    <img src="{{ review.avatar_url }}" alt="" class="rounded-circle me-2" style="width: 24px; height: 24px;">
+                    {% endif %}
+                    {{ review.client_name }}
+                </td>
+                <td>{{ review.text[:50] }}...</td>
+                <td>
+                    {% for i in range(review.rating) %}
+                    <i class="bi bi-star-fill text-warning"></i>
+                    {% endfor %}
+                </td>
+                <td>
+                    {% if review.is_published %}
+                    <span class="badge bg-success">Опубликован</span>
+                    {% else %}
+                    <span class="badge bg-warning">Скрыт</span>
+                    {% endif %}
+                </td>
+                <td>{{ review.created_at.strftime('%d.%m.%Y') }}</td>
+                <td>
+                    <div class="btn-group btn-group-sm">
+                        <a href="{{ url_for('admin_review_edit', id=review.id) }}" class="btn btn-outline-secondary" title="Редактировать">
+                            <i class="bi bi-pencil"></i>
+                        </a>
+                        <a href="{{ url_for('admin_review_delete', id=review.id) }}" class="btn btn-outline-danger" title="Удалить" onclick="return confirm('Вы уверены?')">
+                            <i class="bi bi-trash"></i>
+                        </a>
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

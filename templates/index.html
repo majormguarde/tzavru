@@ -2,13 +2,62 @@
 
 {% block title %}Imperial Collection: Псковский берег - Три грани настоящего отдыха{% endblock %}
 
+{% block extra_js %}
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Initialize map centered on Pskov region (approx)
+        var map = L.map('map-container').setView([57.819, 28.332], 8);
+
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+        }).addTo(map);
+
+        var bounds = [];
+
+        {% if map_properties %}
+            {% for property in map_properties %}
+                var marker = L.marker([{{ property.latitude }}, {{ property.longitude }}]).addTo(map);
+                marker.bindPopup("<b>{{ property.name }}</b><br>{{ property.location }}<br><a href='{{ url_for('property_detail', id=property.id) }}'>Подробнее</a>");
+                bounds.push([{{ property.latitude }}, {{ property.longitude }}]);
+            {% endfor %}
+
+            if (bounds.length > 0) {
+                map.fitBounds(bounds, {padding: [50, 50]});
+            }
+        {% endif %}
+    });
+</script>
+{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+{% endblock %}
+
 {% block content %}
 <!-- Hero Section -->
-<section class="hero-section" style="background-image: url('https://sfile.chatglm.cn/images-ppt/5f816eb42a51.jpg')">
+<section class="hero-section">
+    <!-- Carousel Background -->
+    <div id="mainHeroCarousel" class="carousel slide hero-carousel carousel-fade" data-bs-ride="carousel" data-bs-interval="5000" data-bs-pause="false">
+        <div class="carousel-inner h-100">
+            {% if properties %}
+                {% for property in properties %}
+                <div class="carousel-item h-100 {% if loop.first %}active{% endif %}">
+                    <img src="{{ property.image_url }}" class="d-block w-100" alt="{{ property.name }}">
+                </div>
+                {% endfor %}
+            {% else %}
+                <div class="carousel-item active h-100">
+                    <img src="https://sfile.chatglm.cn/images-ppt/5f816eb42a51.jpg" class="d-block w-100" alt="Imperial Collection">
+                </div>
+            {% endif %}
+        </div>
+    </div>
+
     <div class="hero-overlay"></div>
     <div class="container h-100 d-flex align-items-center">
         <div class="hero-content text-center">
-            <h1 class="hero-title mb-4">Imperial Collection</h1>
+            <h1 class="hero-title mb-4">{{ site_settings.site_name if site_settings else 'Imperial Collection' }}</h1>
             <p class="hero-subtitle mb-2">Псковский берег</p>
             <div class="hero-divider mx-auto mb-4"></div>
             <p class="hero-tagline mb-5">Три грани настоящего отдыха</p>
@@ -38,8 +87,10 @@
                                 <i class="bi bi-crosshair"></i> Охота
                             {% elif property.property_type == 'mansion' %}
                                 <i class="bi bi-building"></i> Премиум
-                            {% else %}
+                            {% elif property.property_type == 'village' %}
                                 <i class="bi bi-house-heart"></i> Традиции
+                            {% else %}
+                                <i class="bi bi-star"></i> {{ property.property_type }}
                             {% endif %}
                         </div>
                     </div>
@@ -68,7 +119,7 @@
                         </div>
                         
                         <div class="property-actions">
-                            <a href="{{ url_for('property_detail', property_id=property.id) }}" 
+                            <a href="{{ url_for('property_detail', id=property.id) }}" 
                                class="btn btn-outline-primary w-100">
                                 Подробнее <i class="bi bi-arrow-right ms-2"></i>
                             </a>
@@ -155,6 +206,53 @@
     </div>
 </section>
 
+<!-- Reviews Section -->
+<section id="reviews" class="reviews-section py-5">
+    <div class="container">
+        <h2 class="section-title text-center mb-5">Отзывы наших гостей</h2>
+        <div class="row">
+            {% for review in reviews %}
+            <div class="col-md-4 mb-4">
+                <div class="card h-100 shadow-sm">
+                    <div class="card-body">
+                        <div class="d-flex align-items-center mb-3">
+                            {% if review.avatar_url %}
+                            <img src="{{ review.avatar_url }}" alt="{{ review.client_name }}" class="rounded-circle me-3" style="width: 50px; height: 50px; object-fit: cover;">
+                            {% else %}
+                            <div class="rounded-circle bg-secondary text-white d-flex align-items-center justify-content-center me-3" style="width: 50px; height: 50px;">
+                                <i class="bi bi-person-fill h4 mb-0"></i>
+                            </div>
+                            {% endif %}
+                            <div>
+                                <h5 class="card-title mb-0">{{ review.client_name }}</h5>
+                                <div class="text-warning">
+                                    {% for i in range(review.rating) %}
+                                    <i class="bi bi-star-fill"></i>
+                                    {% endfor %}
+                                    {% for i in range(5 - review.rating) %}
+                                    <i class="bi bi-star"></i>
+                                    {% endfor %}
+                                </div>
+                            </div>
+                        </div>
+                        <p class="card-text">"{{ review.text }}"</p>
+                        <p class="text-muted small mb-0 text-end">{{ review.created_at.strftime('%d.%m.%Y') }}</p>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</section>
+
+<!-- Map Section -->
+<section id="map" class="map-section py-3">
+    <div class="container">
+        <h2 class="section-title text-center mb-4">Наши объекты на карте</h2>
+        <div id="map-container" style="height: 500px; width: 100%; border-radius: 10px; overflow: hidden; box-shadow: 0 4px 6px rgba(255,255,255,0.1);"></div>
+    </div>
+</section>
+
 <!-- Contact Section -->
 <section id="contact" class="contact-section py-5">
     <div class="container">
@@ -171,14 +269,17 @@
                         <i class="bi bi-telephone-fill"></i>
                         <div>
                             <strong>Телефон</strong>
-                            <p class="mb-0">+7 900 123-45-67</p>
+                            <p class="mb-0">{{ site_settings.phone_main if site_settings else '+7 900 123-45-67' }}</p>
+                            {% if site_settings and site_settings.phone_secondary %}
+                            <p class="mb-0">{{ site_settings.phone_secondary }}</p>
+                            {% endif %}
                         </div>
                     </div>
                     <div class="contact-item mb-3">
                         <i class="bi bi-envelope-fill"></i>
                         <div>
                             <strong>Email</strong>
-                            <p class="mb-0">info@imperial-collection.ru</p>
+                            <p class="mb-0">{{ site_settings.email_info if site_settings else 'info@imperial-collection.ru' }}</p>
                         </div>
                     </div>
                     <div class="contact-item">
