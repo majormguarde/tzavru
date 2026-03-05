@@ -217,14 +217,19 @@
                     <div class="card-body">
                         <div class="d-flex align-items-center mb-3">
                             {% if review.avatar_url %}
-                            <img src="{{ review.avatar_url }}" alt="{{ review.client_name }}" class="rounded-circle me-3" style="width: 50px; height: 50px; object-fit: cover;">
+                            <img src="{{ review.avatar_url }}" alt="{{ review.author or review.client_name }}" class="rounded-circle me-3" style="width: 50px; height: 50px; object-fit: cover;">
                             {% else %}
                             <div class="rounded-circle bg-secondary text-white d-flex align-items-center justify-content-center me-3" style="width: 50px; height: 50px;">
                                 <i class="bi bi-person-fill h4 mb-0"></i>
                             </div>
                             {% endif %}
                             <div>
-                                <h5 class="card-title mb-0">{{ review.client_name }}</h5>
+                                {% if review.title %}
+                                <h5 class="card-title mb-1">{{ review.title }}</h5>
+                                <div class="text-muted small mb-1">{{ review.author or review.client_name }}</div>
+                                {% else %}
+                                <h5 class="card-title mb-0">{{ review.author or review.client_name }}</h5>
+                                {% endif %}
                                 <div class="text-warning">
                                     {% for i in range(review.rating) %}
                                     <i class="bi bi-star-fill"></i>

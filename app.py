@@ -101,6 +101,8 @@ class Property(db.Model):
 
 class Review(db.Model):
     id = db.Column(db.Integer, primary_key=True)
+    title = db.Column(db.String(200))
+    author = db.Column(db.String(100))
     client_name = db.Column(db.String(100), nullable=False)
     text = db.Column(db.Text, nullable=False)
     rating = db.Column(db.Integer, default=5)
@@ -636,12 +638,17 @@ def admin_reviews():
 @login_required
 def admin_review_add():
     if request.method == 'POST':
-        client_name = request.form['client_name']
+        title = request.form.get('title', '')
+        author = request.form['author']
+        # Maintain backward compatibility
+        client_name = author 
         text = request.form['text']
         rating = int(request.form['rating'])
         is_published = 'is_published' in request.form
         
         review = Review(
+            title=title,
+            author=author,
             client_name=client_name,
             text=text,
             rating=rating,
@@ -668,7 +675,9 @@ def admin_review_add():
 def admin_review_edit(id):
     review = Review.query.get_or_404(id)
     if request.method == 'POST':
-        review.client_name = request.form['client_name']
+        review.title = request.form.get('title', '')
+        review.author = request.form['author']
+        review.client_name = review.author # Keep synced
         review.text = request.form['text']
         review.rating = int(request.form['rating'])
         review.is_published = 'is_published' in request.form

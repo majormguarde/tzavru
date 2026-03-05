@@ -64,21 +64,14 @@
                                    value="{{ property.name if property else '' }}" required>
                         </div>
                         <div class="col-md-4">
-                            <label class="form-label">Тип объекта *</label>
-                            <div class="input-group">
-                                <input type="text" name="property_type" id="property_type_input" class="form-control" 
-                                       value="{{ current_type_name }}" 
-                                       required autocomplete="off" placeholder="Выберите или введите...">
-                                <button class="btn btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
-                                    <i class="bi bi-list"></i>
-                                </button>
-                                <ul class="dropdown-menu dropdown-menu-end" style="max-height: 300px; overflow-y: auto;">
-                                    {% for type in unique_types %}
-                                    <li><a class="dropdown-item" href="#" onclick="document.getElementById('property_type_input').value = '{{ type.name }}'; return false;">{{ type.name }}</a></li>
-                                    {% endfor %}
-                                </ul>
-                            </div>
-                            <div class="form-text">Выберите из списка или введите новый тип вручную</div>
+                            <label class="form-label">Уровень сервиса (Тип) *</label>
+                            <select name="property_type" class="form-select" required>
+                                <option value="" disabled {% if not property %}selected{% endif %}>Выберите уровень сервиса...</option>
+                                {% for type in unique_types %}
+                                <option value="{{ type.slug }}" {% if property and property.property_type == type.slug %}selected{% endif %}>{{ type.name }}</option>
+                                {% endfor %}
+                            </select>
+                            <div class="form-text">Выберите уровень сервиса из списка</div>
                         </div>
                         
                         <div class="col-12">
@@ -91,7 +84,8 @@
                         
                         <div class="col-12">
                             <label class="form-label">Полное описание *</label>
-                            <textarea name="full_description" class="form-control" rows="5" required>{{ property.full_description if property else '' }}</textarea>
+                            <textarea name="full_description" class="form-control" rows="10" required placeholder="Используйте Enter для разделения абзацев">{{ property.full_description if property else '' }}</textarea>
+                            <div class="form-text">Используйте клавишу Enter для создания новых абзацев.</div>
                         </div>
                         
                         <div class="col-12">

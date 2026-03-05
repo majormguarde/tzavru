@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}{{ property.name }} - Imperial Collection{% endblock %}
+{% block title %}{{ property.name }}{% endblock %}
 
 {% block content %}
 <div class="property-detail-page">
@@ -166,7 +166,13 @@
         <div class="row">
             <div class="col-lg-8 mb-4">
                 <h3 class="mb-4">Описание</h3>
-                <p class="lead">{{ property.full_description }}</p>
+                <div class="property-description">
+                    {% for paragraph in property.full_description.split('\n') %}
+                        {% if paragraph.strip() %}
+                        <p class="lead">{{ paragraph }}</p>
+                        {% endif %}
+                    {% endfor %}
+                </div>
             </div>
             <div class="col-lg-4">
                 <div class="booking-sidebar">
