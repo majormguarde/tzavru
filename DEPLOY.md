@@ -28,6 +28,17 @@
     git reset --hard origin/master
     ```
 
+### Авторизация (Важно!)
+При выполнении команд Git попросит логин и пароль.
+*   **Username**: `majormguarde-bit`
+*   **Password**: Здесь нужно использовать **Personal Access Token**, а не пароль от аккаунта (так как GitHub отключил поддержку паролей).
+
+**Альтернатива (SSH):**
+Если у вас настроены SSH-ключи на сервере, лучше использовать SSH-ссылку:
+```bash
+git remote set-url origin git@github.com:majormguarde-bit/tzavru.git
+```
+
 ---
 
 ## Пошаговая инструкция (Регулярное обновление)
