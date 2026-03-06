@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
-from flask import Flask, render_template, request, redirect, url_for, flash, session
+from flask import Flask, render_template, request, redirect, url_for, flash, session, jsonify
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
-from datetime import datetime
+from datetime import datetime, timedelta
+import calendar
 from config import Config
 import json
 import os
@@ -11,6 +12,13 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from functools import wraps
 import re
 import unicodedata
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+import requests
+import io
+import random
+import string
 
 def slugify(value):
     """
@@ -59,6 +67,82 @@ def allowed_file(filename):
 def allowed_video_file(filename):
     return '.' in filename and \
            filename.rsplit('.', 1)[1].lower() in ALLOWED_VIDEO_EXTENSIONS
+
+import threading
+
+def send_email_notification(subject, html_body, recipient=None):
+    try:
+        with app.app_context():
+            settings = SiteSettings.query.first()
+            if not settings or not settings.smtp_server:
+                print("SMTP settings not configured")
+                return False
+
+            if not recipient:
+                recipient = settings.email_info
+                
+            if not recipient:
+                print("No recipient email configured")
+                return False
+
+            msg = MIMEMultipart()
+            msg['From'] = settings.smtp_username
+            msg['To'] = recipient
+            msg['Subject'] = subject
+            
+            msg.attach(MIMEText(html_body, 'html'))
+            
+            # Add timeout to prevent blocking
+            server = smtplib.SMTP(settings.smtp_server, settings.smtp_port, timeout=10)
+            if settings.smtp_use_tls:
+                server.starttls()
+            
+            if settings.smtp_username and settings.smtp_password:
+                server.login(settings.smtp_username, settings.smtp_password)
+                
+            server.sendmail(settings.smtp_username, recipient, msg.as_string())
+            server.quit()
+            print(f"Email sent to {recipient}")
+            return True
+    except Exception as e:
+        print(f"Failed to send email: {e}")
+        return False
+
+def send_sms_notification(phone, message):
+    try:
+        with app.app_context():
+            settings = SiteSettings.query.first()
+            if not settings or not settings.sms_enabled or not settings.sms_api_id:
+                print("SMS settings not configured or disabled")
+                return False
+
+            # Simple normalization of phone number (remove non-digits)
+            phone = re.sub(r'\D', '', phone)
+            
+            # SMS.ru API implementation (example)
+            # https://sms.ru/sms/send?api_id=[API_ID]&to=[PHONE]&msg=[MESSAGE]&json=1
+            url = "https://sms.ru/sms/send"
+            params = {
+                "api_id": settings.sms_api_id,
+                "to": phone,
+                "msg": message,
+                "json": 1
+            }
+            
+            # Add timeout
+            response = requests.get(url, params=params, timeout=10)
+            result = response.json()
+            
+            if result.get("status_code") == 100:
+                print(f"SMS sent to {phone}")
+                return True
+            else:
+                print(f"Failed to send SMS: {result}")
+                return False
+                
+    except Exception as e:
+        print(f"Failed to send SMS: {e}")
+        return False
 
 # Добавляем фильтры для Jinja2
 @app.template_filter('from_json')
@@ -200,6 +284,10 @@ class SiteSettings(db.Model):
     smtp_password = db.Column(db.String(100))
     smtp_use_tls = db.Column(db.Boolean, default=True)
 
+    # SMS settings
+    sms_api_id = db.Column(db.String(100))
+    sms_enabled = db.Column(db.Boolean, default=False)
+
     def __repr__(self):
         return f'<SiteSettings {self.site_name}>'
 
@@ -276,24 +364,187 @@ def property_detail(id):
     property = Property.query.get_or_404(id)
     return render_template('property_detail.html', property=property)
 
+@app.route('/api/properties/<int:property_id>/busy-dates')
+def get_busy_dates(property_id):
+    # Get bookings that are confirmed or pending
+    # Check if status column exists first (it should based on model definition)
+    bookings = Booking.query.filter(
+        Booking.property_id == property_id,
+        Booking.status.in_(['pending', 'confirmed', 'completed'])
+    ).all()
+    
+    busy_dates = []
+    for booking in bookings:
+        busy_dates.append({
+            'from': booking.check_in.strftime('%Y-%m-%d'),
+            'to': booking.check_out.strftime('%Y-%m-%d')
+        })
+        
+    return jsonify(busy_dates)
+
+def generate_math_captcha():
+    """Generates a simple math problem."""
+    a = random.randint(1, 10)
+    b = random.randint(1, 10)
+    operator = random.choice(['+', '-'])
+    if operator == '+':
+        answer = a + b
+    else:
+        # Ensure positive result
+        if a < b: a, b = b, a
+        answer = a - b
+        
+    return f"{a} {operator} {b} =", str(answer)
+
+@app.route('/captcha')
+def captcha():
+    """Returns a new math CAPTCHA problem as JSON."""
+    question, answer = generate_math_captcha()
+    session['captcha'] = answer
+    return jsonify({'question': question})
+
 @app.route('/booking/<int:property_id>', methods=['GET', 'POST'])
 def booking(property_id):
+    property = Property.query.get_or_404(property_id)
+    
+    if request.method == 'GET':
+        # Generate initial captcha for GET request
+        captcha_question, captcha_answer = generate_math_captcha()
+        session['captcha'] = captcha_answer
+    else:
+        captcha_question = None # Not needed for POST unless we re-render on error without redirect
+    
     if request.method == 'POST':
-        booking = Booking(
-            property_id=property_id,
-            guest_name=request.form['guest_name'],
-            guest_email=request.form['guest_email'],
-            guest_phone=request.form.get('guest_phone', ''),
-            check_in=request.form['check_in'],
-            check_out=request.form['check_out'],
-            guests_count=int(request.form.get('guests_count', 1)),
-            total_price=float(request.form.get('total_price', 0))
-        )
-        db.session.add(booking)
-        db.session.commit()
-        flash('Бронирование отправлено!', 'success')
-        return redirect(url_for('index'))
-    return render_template('booking.html', property_id=property_id)
+        is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest' or 'application/json' in request.headers.get('Accept', '')
+
+        # CAPTCHA Validation
+        captcha_input = request.form.get('captcha', '').strip()
+        captcha_session = session.get('captcha', '')
+        
+        # Clear captcha from session to prevent reuse
+        session.pop('captcha', None)
+
+        if not captcha_input or captcha_input != captcha_session:
+            msg = 'Неверный код с картинки (CAPTCHA)'
+            if is_ajax:
+                return jsonify({'status': 'error', 'message': msg})
+            flash(msg, 'error')
+            return redirect(url_for('booking', property_id=property_id))
+
+        try:
+            check_in_str = request.form['check_in']
+            check_out_str = request.form['check_out']
+            
+            check_in = datetime.strptime(check_in_str, '%Y-%m-%d').date()
+            check_out = datetime.strptime(check_out_str, '%Y-%m-%d').date()
+            
+            # 1. Basic Validation
+            if check_in >= check_out:
+                msg = 'Дата выезда должна быть позже даты заезда'
+                if is_ajax: return jsonify({'status': 'error', 'message': msg})
+                flash(msg, 'error')
+                return redirect(url_for('booking', property_id=property_id))
+            
+            if check_in < datetime.now().date():
+                msg = 'Нельзя забронировать на прошедшую дату'
+                if is_ajax: return jsonify({'status': 'error', 'message': msg})
+                flash(msg, 'error')
+                return redirect(url_for('booking', property_id=property_id))
+                
+            # 2. Check availability (overlap check)
+            # (StartA <= EndB) and (EndA >= StartB)
+            overlapping = Booking.query.filter(
+                Booking.property_id == property_id,
+                Booking.status.in_(['pending', 'confirmed', 'completed']),
+                Booking.check_in < check_out,
+                Booking.check_out > check_in
+            ).first()
+            
+            if overlapping:
+                msg = 'К сожалению, выбранные даты уже забронированы. Пожалуйста, выберите свободные даты.'
+                if is_ajax: return jsonify({'status': 'error', 'message': msg})
+                flash(msg, 'error')
+                return redirect(url_for('booking', property_id=property_id))
+
+            # 3. Calculate price server-side
+            days = (check_out - check_in).days
+            total_price = days * property.price_per_night
+            
+            guests_count = int(request.form.get('guests_count', 1))
+            if guests_count > property.capacity:
+                msg = f'Максимальное количество гостей: {property.capacity}'
+                if is_ajax: return jsonify({'status': 'error', 'message': msg})
+                flash(msg, 'error')
+                return redirect(url_for('booking', property_id=property_id))
+
+            booking = Booking(
+                property_id=property_id,
+                guest_name=request.form['guest_name'],
+                guest_email=request.form['guest_email'],
+                guest_phone=request.form.get('guest_phone', ''),
+                check_in=check_in,
+                check_out=check_out,
+                guests_count=guests_count,
+                special_requests=request.form.get('special_requests', ''),
+                total_price=total_price,
+                status='pending'
+            )
+            db.session.add(booking)
+            db.session.commit()
+            
+            # Send email notification
+            try:
+                html_body = f"""
+                <h3>Новое бронирование!</h3>
+                <p><strong>Объект:</strong> {property.name}</p>
+                <p><strong>Гость:</strong> {booking.guest_name}</p>
+                <p><strong>Email:</strong> {booking.guest_email}</p>
+                <p><strong>Телефон:</strong> {booking.guest_phone}</p>
+                <p><strong>Даты:</strong> {booking.check_in} - {booking.check_out}</p>
+                <p><strong>Гостей:</strong> {booking.guests_count}</p>
+                <p><strong>Сумма:</strong> {booking.total_price} руб.</p>
+                """
+                # Run in background thread to avoid blocking response
+                threading.Thread(target=send_email_notification, 
+                               args=(f"Новое бронирование: {property.name}", html_body)).start()
+            except Exception as e:
+                print(f"Error sending booking email: {e}")
+
+            # Send SMS notification
+            try:
+                sms_message = f"Бронирование #{booking.id}: {property.name}, {booking.check_in} - {booking.check_out}. Ждите звонка."
+                # Send to client
+                threading.Thread(target=send_sms_notification, 
+                               args=(booking.guest_phone, sms_message)).start()
+                
+                # Send to admin (optional, if phone_main is mobile)
+                settings = SiteSettings.query.first()
+                if settings and settings.phone_secondary:
+                    admin_sms = f"Новое бронирование #{booking.id} от {booking.guest_name} ({booking.total_price}р)"
+                    threading.Thread(target=send_sms_notification, 
+                                   args=(settings.phone_secondary, admin_sms)).start()
+            except Exception as e:
+                print(f"Error sending booking SMS: {e}")
+                
+            msg = 'Бронирование успешно создано! Ожидайте подтверждения.'
+            if is_ajax:
+                return jsonify({'status': 'success', 'message': msg})
+                
+            flash(msg, 'success')
+            return redirect(url_for('index'))
+            
+        except ValueError:
+            msg = 'Неверный формат даты'
+            if is_ajax: return jsonify({'status': 'error', 'message': msg})
+            flash(msg, 'error')
+            return redirect(url_for('booking', property_id=property_id))
+        except Exception as e:
+            msg = f'Ошибка сервера: {str(e)}'
+            if is_ajax: return jsonify({'status': 'error', 'message': msg})
+            flash(msg, 'error')
+            return redirect(url_for('booking', property_id=property_id))
+            
+    return render_template('booking.html', property=property, captcha_question=captcha_question)
 
 @app.route('/contact', methods=['GET', 'POST'])
 def contact():
@@ -306,40 +557,177 @@ def contact():
         )
         db.session.add(contact)
         db.session.commit()
+        
+        # Send email notification
+        try:
+            html_body = f"""
+            <h3>Новое сообщение с сайта</h3>
+            <p><strong>Имя:</strong> {contact.name}</p>
+            <p><strong>Email:</strong> {contact.email}</p>
+            <p><strong>Телефон:</strong> {contact.phone}</p>
+            <p><strong>Сообщение:</strong><br>{contact.message}</p>
+            """
+            threading.Thread(target=send_email_notification, 
+                           args=(f"Новое сообщение от {contact.name}", html_body)).start()
+        except Exception as e:
+            print(f"Error sending contact email: {e}")
+            
         flash('Сообщение отправлено!', 'success')
         return redirect(url_for('index'))
     return render_template('base.html')
 
 # Admin routes
+def get_dashboard_stats(start_date, end_date):
+    # Base query for range overlap
+    base_query = Booking.query.filter(
+        Booking.check_out >= start_date,
+        Booking.check_in <= end_date
+    )
+    
+    # Recent bookings for list (all in range, sorted by check-in desc)
+    bookings_list = base_query.order_by(Booking.check_in.desc()).all()
+    
+    total_bookings = base_query.count()
+    pending_bookings = base_query.filter(Booking.status == 'pending').count()
+    
+    # Revenue (confirmed + completed)
+    revenue_query = db.session.query(db.func.sum(Booking.total_price)).filter(
+        Booking.check_out >= start_date,
+        Booking.check_in <= end_date
+    )
+    
+    confirmed_revenue = revenue_query.filter(
+        Booking.status.in_(['confirmed', 'completed'])
+    ).scalar() or 0
+    
+    pending_revenue = revenue_query.filter(
+        Booking.status == 'pending'
+    ).scalar() or 0
+    
+    stats = {
+        'total_properties': Property.query.count(),
+        'total_bookings': total_bookings,
+        'pending_bookings': pending_bookings,
+        'confirmed_revenue': confirmed_revenue,
+        'pending_revenue': pending_revenue
+    }
+    
+    return stats, bookings_list
+
+@app.route('/admin/api/dashboard-stats')
+@login_required
+def admin_api_dashboard_stats():
+    start_str = request.args.get('start')
+    end_str = request.args.get('end')
+    
+    if not start_str or not end_str:
+        return jsonify({'error': 'Missing dates'}), 400
+        
+    try:
+        if 'T' in start_str:
+            start_date = datetime.fromisoformat(start_str.replace('Z', '+00:00')).date()
+        else:
+            start_date = datetime.strptime(start_str, '%Y-%m-%d').date()
+            
+        if 'T' in end_str:
+            end_date = datetime.fromisoformat(end_str.replace('Z', '+00:00')).date()
+        else:
+            end_date = datetime.strptime(end_str, '%Y-%m-%d').date()
+    except ValueError:
+        return jsonify({'error': 'Invalid date format'}), 400
+        
+    stats, bookings = get_dashboard_stats(start_date, end_date)
+    
+    bookings_json = []
+    for b in bookings:
+        status_display = {
+            'pending': 'Ожидает',
+            'confirmed': 'Подтверждено',
+            'completed': 'Завершено',
+            'cancelled': 'Отменено'
+        }.get(b.status, b.status)
+        
+        status_class = {
+            'pending': 'warning',
+            'confirmed': 'success',
+            'completed': 'secondary',
+            'cancelled': 'danger'
+        }.get(b.status, 'secondary')
+        
+        bookings_json.append({
+            'id': b.id,
+            'guest_name': b.guest_name,
+            'guest_email': b.guest_email,
+            'property_name': b.property.name,
+            'check_in': b.check_in.strftime('%d.%m.%Y'),
+            'check_out': b.check_out.strftime('%d.%m.%Y'),
+            'total_price': b.total_price,
+            'status': b.status,
+            'status_display': status_display,
+            'status_class': status_class,
+            'edit_url': url_for('admin_booking_edit', booking_id=b.id)
+        })
+        
+    return jsonify({
+        'stats': stats,
+        'bookings': bookings_json
+    })
+
 @app.route('/admin')
 @admin_required
 def admin_dashboard():
-    # Stats
-    total_properties = Property.query.count()
-    total_bookings = Booking.query.count()
-    pending_bookings_count = Booking.query.filter_by(status='pending').count()
+    today = datetime.now().date()
+    # Stats for Current Month
+    stats_start = today.replace(day=1)
+    _, last_day = calendar.monthrange(today.year, today.month)
+    stats_end = today.replace(day=last_day)
     
-    # Revenue
-    bookings_revenue = db.session.query(db.func.sum(Booking.total_price)).scalar()
-    total_revenue = bookings_revenue if bookings_revenue else 0
-    
-    stats = {
-        'total_properties': total_properties,
-        'total_bookings': total_bookings,
-        'pending_bookings': pending_bookings_count,
-        'total_revenue': total_revenue
-    }
-    
-    # Recent bookings
-    recent_bookings = Booking.query.order_by(Booking.created_at.desc()).limit(5).all()
+    stats, recent_bookings = get_dashboard_stats(stats_start, stats_end)
     
     # Pending contacts
     pending_contacts = ContactRequest.query.filter_by(is_processed=False).count()
     
+    # Calendar Data
+    today = datetime.now().date()
+    start_date = today.replace(day=1)
+    end_date = start_date + timedelta(days=90) # roughly 3 months
+    
+    calendar_bookings = Booking.query.filter(
+        Booking.check_out >= start_date,
+        Booking.check_in <= end_date,
+        Booking.status.in_(['pending', 'confirmed', 'completed'])
+    ).all()
+    
+    calendar_events = []
+    for booking in calendar_bookings:
+        color = '#ffc107' # pending (warning)
+        text_color = '#000000' # default black for yellow
+        
+        if booking.status == 'confirmed':
+            color = '#198754' # success
+            text_color = '#ffffff'
+        elif booking.status == 'completed':
+            color = '#6c757d' # secondary
+            text_color = '#ffffff'
+            
+        calendar_events.append({
+            'title': f"{booking.property.name} - {booking.guest_name}",
+            'start': booking.check_in.isoformat(),
+            'end': booking.check_out.isoformat(),
+            'color': color,
+            'textColor': text_color,
+            'url': url_for('admin_booking_edit', booking_id=booking.id),
+            'extendedProps': {
+                'guest_name': booking.guest_name,
+                'status': booking.status
+            }
+        })
+    
     return render_template('admin/dashboard.html', 
                            stats=stats, 
                            recent_bookings=recent_bookings, 
-                           pending_contacts=pending_contacts)
+                           pending_contacts=pending_contacts,
+                           calendar_events=calendar_events)
 
 @app.route('/admin/login', methods=['GET', 'POST'])
 def login():
@@ -693,6 +1081,106 @@ def admin_booking_cancel(booking_id):
     flash('Бронирование отменено', 'info')
     return redirect(url_for('admin_bookings'))
 
+@app.route('/admin/bookings/add', methods=['GET', 'POST'])
+@login_required
+def admin_booking_add():
+    if request.method == 'POST':
+        try:
+            property_id = int(request.form['property_id'])
+            check_in = datetime.strptime(request.form['check_in'], '%Y-%m-%d').date()
+            check_out = datetime.strptime(request.form['check_out'], '%Y-%m-%d').date()
+            
+            if check_in >= check_out:
+                flash('Дата выезда должна быть позже даты заезда', 'error')
+                return redirect(url_for('admin_booking_add'))
+
+            # Check overlap
+            overlapping = Booking.query.filter(
+                Booking.property_id == property_id,
+                Booking.status.in_(['pending', 'confirmed', 'completed']),
+                Booking.check_in < check_out,
+                Booking.check_out > check_in
+            ).first()
+            
+            if overlapping:
+                flash(f'Внимание! Вы создаете бронирование, которое пересекается с существующим #{overlapping.id}', 'warning')
+
+            booking = Booking(
+                property_id=property_id,
+                guest_name=request.form['guest_name'],
+                guest_email=request.form['guest_email'],
+                guest_phone=request.form['guest_phone'],
+                check_in=check_in,
+                check_out=check_out,
+                guests_count=int(request.form['guests_count']),
+                special_requests=request.form.get('special_requests', ''),
+                total_price=float(request.form['total_price']),
+                status=request.form['status']
+            )
+            
+            db.session.add(booking)
+            db.session.commit()
+            flash('Бронирование создано', 'success')
+            return redirect(url_for('admin_bookings'))
+        except ValueError as e:
+            flash(f'Ошибка данных: {e}', 'error')
+            
+    properties = Property.query.order_by(Property.name).all()
+    return render_template('admin/edit_booking.html', properties=properties)
+
+@app.route('/admin/bookings/edit/<int:booking_id>', methods=['GET', 'POST'])
+@login_required
+def admin_booking_edit(booking_id):
+    booking = Booking.query.get_or_404(booking_id)
+    
+    if request.method == 'POST':
+        try:
+            booking.property_id = int(request.form['property_id'])
+            booking.check_in = datetime.strptime(request.form['check_in'], '%Y-%m-%d').date()
+            booking.check_out = datetime.strptime(request.form['check_out'], '%Y-%m-%d').date()
+            
+            if booking.check_in >= booking.check_out:
+                flash('Дата выезда должна быть позже даты заезда', 'error')
+                return redirect(url_for('admin_booking_edit', booking_id=booking.id))
+            
+            # Check overlap
+            overlapping = Booking.query.filter(
+                Booking.property_id == booking.property_id,
+                Booking.id != booking.id,
+                Booking.status.in_(['pending', 'confirmed', 'completed']),
+                Booking.check_in < booking.check_out,
+                Booking.check_out > booking.check_in
+            ).first()
+            
+            if overlapping:
+                flash(f'Внимание! Бронирование пересекается с существующим #{overlapping.id}', 'warning')
+                
+            booking.guest_name = request.form['guest_name']
+            booking.guest_email = request.form['guest_email']
+            booking.guest_phone = request.form['guest_phone']
+            booking.guests_count = int(request.form['guests_count'])
+            booking.special_requests = request.form.get('special_requests', '')
+            booking.total_price = float(request.form['total_price'])
+            booking.status = request.form['status']
+            
+            db.session.commit()
+            flash('Бронирование обновлено', 'success')
+            return redirect(url_for('admin_bookings'))
+        except ValueError as e:
+            flash(f'Ошибка данных: {e}', 'error')
+
+    properties = Property.query.order_by(Property.name).all()
+    return render_template('admin/edit_booking.html', booking=booking, properties=properties)
+
+@app.route('/admin/bookings/delete/<int:booking_id>', methods=['POST'])
+@login_required
+def admin_booking_delete(booking_id):
+    booking = Booking.query.get_or_404(booking_id)
+    db.session.delete(booking)
+    db.session.commit()
+    flash('Бронирование удалено', 'success')
+    return redirect(url_for('admin_bookings'))
+
 @app.route('/admin/reviews')
 @login_required
 def admin_reviews():
@@ -823,6 +1311,10 @@ def admin_settings():
         settings.smtp_username = request.form.get('smtp_username', '')
         settings.smtp_password = request.form.get('smtp_password', '')
         settings.smtp_use_tls = 'smtp_use_tls' in request.form
+        
+        # SMS settings
+        settings.sms_api_id = request.form.get('sms_api_id', '')
+        settings.sms_enabled = 'sms_enabled' in request.form
         
         # Handle Logo Upload
         if 'logo' in request.files:

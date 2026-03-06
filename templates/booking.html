@@ -2,6 +2,16 @@
 
 {% block title %}Бронирование - {{ property.name }}{% endblock %}
 
+{% block extra_css %}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+<style>
+    .flatpickr-day.selected, .flatpickr-day.startRange, .flatpickr-day.endRange, .flatpickr-day.selected.inRange, .flatpickr-day.startRange.inRange, .flatpickr-day.endRange.inRange, .flatpickr-day.selected:focus, .flatpickr-day.startRange:focus, .flatpickr-day.endRange:focus, .flatpickr-day.selected:hover, .flatpickr-day.startRange:hover, .flatpickr-day.endRange:hover, .flatpickr-day.selected.prevMonthDay, .flatpickr-day.startRange.prevMonthDay, .flatpickr-day.endRange.prevMonthDay, .flatpickr-day.selected.nextMonthDay, .flatpickr-day.startRange.nextMonthDay, .flatpickr-day.endRange.nextMonthDay {
+        background: #198754;
+        border-color: #198754;
+    }
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="booking-page py-5">
     <div class="container">
@@ -18,13 +28,13 @@
                             <div class="row g-3">
                                 <div class="col-md-6">
                                     <label class="form-label">Дата заезда *</label>
-                                    <input type="date" name="check_in" class="form-control" 
-                                           required id="check_in">
+                                    <input type="text" name="check_in" class="form-control" 
+                                           required id="check_in" placeholder="Выберите дату">
                                 </div>
                                 <div class="col-md-6">
                                     <label class="form-label">Дата выезда *</label>
-                                    <input type="date" name="check_out" class="form-control" 
-                                           required id="check_out">
+                                    <input type="text" name="check_out" class="form-control" 
+                                           required id="check_out" placeholder="Выберите дату">
                                 </div>
                                 <div class="col-md-6">
                                     <label class="form-label">Ваше имя *</label>
@@ -51,6 +61,20 @@
                                 </div>
                                 <div class="col-12">
                                     <div id="availabilityMessage" class="alert d-none"></div>
+                                </div>
+                                <div class="col-12">
+                                    <label class="form-label">Решите пример *</label>
+                                    <div class="d-flex align-items-center gap-3">
+                                        <div class="position-relative">
+                                            <div id="captchaQuestion" class="form-control d-flex align-items-center justify-content-center bg-white text-dark fw-bold fs-4" style="height: 50px; min-width: 120px; cursor: default; user-select: none;">
+                                                {{ captcha_question }}
+                                            </div>
+                                        </div>
+                                        <input type="text" name="captcha" class="form-control" placeholder="Ответ" required autocomplete="off" style="width: 100px; font-size: 1.2rem; text-align: center;" inputmode="numeric">
+                                        <button type="button" class="btn btn-outline-secondary" onclick="refreshCaptcha()" title="Обновить пример">
+                                            <i class="bi bi-arrow-repeat"></i>
+                                        </button>
+                                    </div>
                                 </div>
                                 <div class="col-12">
                                     <button type="submit" class="btn btn-primary btn-lg w-100">
@@ -89,67 +113,237 @@
         </div>
     </div>
 </div>
+
+<!-- Booking Result Modal -->
+<div class="modal fade" id="bookingResultModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header border-0 pb-0">
+                <h5 class="modal-title fw-bold" id="bookingModalTitle">Результат бронирования</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body text-center py-4">
+                <div id="bookingModalIcon" class="mb-3" style="font-size: 4rem;"></div>
+                <h4 id="bookingModalHeading" class="mb-3"></h4>
+                <p id="bookingModalMessage" class="text-muted mb-0"></p>
+            </div>
+            <div class="modal-footer border-0 pt-0 justify-content-center">
+                <button type="button" class="btn btn-secondary px-4" data-bs-dismiss="modal">Закрыть</button>
+                <a href="{{ url_for('index') }}" class="btn btn-primary px-4" id="bookingSuccessBtn" style="display: none;">На главную</a>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+<script src="https://npmcdn.com/flatpickr/dist/l10n/ru.js"></script>
 <script>
-document.addEventListener('DOMContentLoaded', function() {
-    const checkIn = document.getElementById('check_in');
-    const checkOut = document.getElementById('check_out');
-    const totalPriceDiv = document.getElementById('totalPrice');
-    const availabilityMsg = document.getElementById('availabilityMessage');
-    const propertyId = {{ property.id }};
-    const pricePerNight = {{ property.price_per_night }};
-    
-    // Set minimum date to today
-    const today = new Date().toISOString().split('T')[0];
-    checkIn.min = today;
-    checkOut.min = today;
-    
-    function calculatePrice() {
-        const checkInDate = new Date(checkIn.value);
-        const checkOutDate = new Date(checkOut.value);
+    // Captcha refresh function
+    window.refreshCaptcha = function() {
+        const questionEl = document.getElementById('captchaQuestion');
+        const inputEl = document.querySelector('input[name="captcha"]');
         
-        if (checkIn.value && checkOut.value && checkOutDate > checkInDate) {
-            const nights = Math.ceil((checkOutDate - checkInDate) / (1000 * 60 * 60 * 24));
-            const total = nights * pricePerNight;
-            
-            totalPriceDiv.innerHTML = `
-                <div class="mb-2"><strong>${nights} ночей</strong></div>
-                <div class="h4 text-primary mb-0">${total.toLocaleString('ru-RU')} ₽</div>
-            `;
-            
-            // Check availability
-            fetch('/check-availability', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({
-                    property_id: propertyId,
-                    check_in: checkIn.value,
-                    check_out: checkOut.value
-                })
-            })
+        // Show loading state
+        const originalText = questionEl.textContent;
+        questionEl.innerHTML = '<div class="spinner-border spinner-border-sm text-secondary" role="status"></div>';
+        
+        fetch("{{ url_for('captcha') }}?t=" + new Date().getTime())
             .then(response => response.json())
             .then(data => {
-                if (data.available) {
-                    availabilityMsg.className = 'alert alert-success';
-                    availabilityMsg.textContent = '✓ Даты доступны для бронирования';
-                } else {
-                    availabilityMsg.className = 'alert alert-warning';
-                    availabilityMsg.textContent = '⚠ На выбранные даты уже есть бронирование';
-                }
+                questionEl.textContent = data.question;
+                inputEl.value = '';
+                inputEl.focus();
+            })
+            .catch(error => {
+                console.error('Error fetching captcha:', error);
+                questionEl.textContent = originalText;
             });
-        } else {
-            totalPriceDiv.innerHTML = '<small class="text-muted">Выберите даты для расчета стоимости</small>';
-        }
     }
     
-    checkIn.addEventListener('change', function() {
-        checkOut.min = this.value;
-        calculatePrice();
-    });
+    // Add click event to question
+    document.getElementById('captchaQuestion').addEventListener('click', refreshCaptcha);
+
+    // Form submission handling
+    document.addEventListener('DOMContentLoaded', function() {
+        const bookingForm = document.getElementById('bookingForm');
+        // Initialize Modal
+        const resultModalEl = document.getElementById('bookingResultModal');
+        const resultModal = new bootstrap.Modal(resultModalEl);
+        
+        const modalIcon = document.getElementById('bookingModalIcon');
+        const modalHeading = document.getElementById('bookingModalHeading');
+        const modalMessage = document.getElementById('bookingModalMessage');
+        const successBtn = document.getElementById('bookingSuccessBtn');
+
+        bookingForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const submitBtn = bookingForm.querySelector('button[type="submit"]');
+            const originalBtnText = submitBtn.innerHTML;
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Обработка...';
+
+            const formData = new FormData(bookingForm);
+
+            fetch(window.location.href, {
+                method: 'POST',
+                body: formData,
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'Accept': 'application/json'
+                }
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Network response was not ok');
+                }
+                return response.json();
+            })
+            .then(data => {
+                if (data.status === 'success') {
+                    modalIcon.innerHTML = '<i class="bi bi-check-circle-fill text-success"></i>';
+                    modalHeading.textContent = 'Бронирование создано!';
+                    modalHeading.className = 'mb-3 text-success';
+                    modalMessage.textContent = data.message;
+                    successBtn.style.display = 'inline-block';
+                    bookingForm.reset();
+                    // Optional: redirect after delay? No, user can click button.
+                } else {
+                    modalIcon.innerHTML = '<i class="bi bi-x-circle-fill text-danger"></i>';
+                    modalHeading.textContent = 'Ошибка';
+                    modalHeading.className = 'mb-3 text-danger';
+                    modalMessage.textContent = data.message;
+                    successBtn.style.display = 'none';
+                    // Refresh captcha on error
+                    refreshCaptcha();
+                }
+                resultModal.show();
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                modalIcon.innerHTML = '<i class="bi bi-exclamation-triangle-fill text-warning"></i>';
+                modalHeading.textContent = 'Ошибка сети';
+                modalHeading.className = 'mb-3 text-warning';
+                modalMessage.textContent = 'Произошла ошибка при отправке запроса. Пожалуйста, попробуйте позже.';
+                successBtn.style.display = 'none';
+                resultModal.show();
+            })
+            .finally(() => {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = originalBtnText;
+            });
+        });
+        
+    const propertyId = {{ property.id }};
+    const pricePerNight = {{ property.price_per_night }};
+    const totalPriceDiv = document.getElementById('totalPrice');
+    const availabilityMsg = document.getElementById('availabilityMessage');
     
-    checkOut.addEventListener('change', calculatePrice);
+    // Fetch busy dates
+    fetch(`/api/properties/${propertyId}/busy-dates`)
+        .then(response => response.json())
+        .then(busyDates => {
+            initCalendar(busyDates);
+        })
+        .catch(err => console.error('Error fetching busy dates:', err));
+        
+    function initCalendar(busyDates) {
+        const disableDates = busyDates.map(d => {
+            return {
+                from: d.from,
+                to: d.to
+            };
+        });
+
+        const fp = flatpickr("#check_in", {
+            locale: "ru",
+            minDate: "today",
+            dateFormat: "Y-m-d",
+            disable: disableDates,
+            onChange: function(selectedDates, dateStr, instance) {
+                // When check-in changes, update check-out minDate
+                if (selectedDates.length > 0) {
+                    // Start date + 1 day minimum
+                    const nextDay = new Date(selectedDates[0]);
+                    nextDay.setDate(nextDay.getDate() + 1);
+                    checkOutPicker.set('minDate', nextDay);
+                    
+                    // Clear check-out if it's before new check-in
+                    if (checkOutPicker.selectedDates.length > 0 && checkOutPicker.selectedDates[0] <= selectedDates[0]) {
+                        checkOutPicker.clear();
+                    }
+                    calculatePrice();
+                }
+            }
+        });
+
+        const checkOutPicker = flatpickr("#check_out", {
+            locale: "ru",
+            minDate: "today",
+            dateFormat: "Y-m-d",
+            disable: disableDates,
+            onChange: function(selectedDates, dateStr, instance) {
+                calculatePrice();
+            }
+        });
+        
+        function calculatePrice() {
+            const checkInDate = fp.selectedDates[0];
+            const checkOutDate = checkOutPicker.selectedDates[0];
+            
+            if (checkInDate && checkOutDate && checkOutDate > checkInDate) {
+                // Check if any disabled date is inside the range
+                let isRangeValid = true;
+                
+                // Client-side validation for range overlap
+                for (let range of busyDates) {
+                    let busyStart = new Date(range.from);
+                    let busyEnd = new Date(range.to);
+                    busyStart.setHours(0,0,0,0);
+                    busyEnd.setHours(0,0,0,0);
+                    
+                    // Logic: if current range [checkIn, checkOut] overlaps with [busyStart, busyEnd]
+                    // We know flatpickr disables start/end selection, but we need to prevent spanning OVER a booked block.
+                    // If busy block is completely INSIDE selection: checkIn < busyStart AND checkOut > busyEnd
+                    if (checkInDate < busyStart && checkOutDate > busyEnd) {
+                         isRangeValid = false;
+                         break;
+                    }
+                    // Also simple overlap check (redundant if Flatpickr disables them, but good for safety)
+                    if ((checkInDate <= busyEnd) && (checkOutDate >= busyStart)) {
+                         isRangeValid = false;
+                         break;
+                    }
+                }
+                
+                if (!isRangeValid) {
+                    availabilityMsg.className = 'alert alert-danger';
+                    availabilityMsg.textContent = 'Выбранный диапазон включает занятые даты!';
+                    availabilityMsg.classList.remove('d-none');
+                    totalPriceDiv.innerHTML = '<div class="text-danger fw-bold">Даты недоступны</div>';
+                    return;
+                }
+                
+                availabilityMsg.className = 'alert alert-success';
+                availabilityMsg.textContent = '✓ Даты доступны';
+                availabilityMsg.classList.remove('d-none');
+
+                const diffTime = Math.abs(checkOutDate - checkInDate);
+                const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                const total = diffDays * pricePerNight;
+                
+                totalPriceDiv.innerHTML = `
+                    <div class="mb-2"><strong>${diffDays} ночей</strong></div>
+                    <div class="h4 text-primary mb-0">${total.toLocaleString('ru-RU')} ₽</div>
+                `;
+            } else {
+                totalPriceDiv.innerHTML = '<small class="text-muted">Выберите даты для расчета стоимости</small>';
+                availabilityMsg.classList.add('d-none');
+            }
+        }
+    }
 });
 </script>
 {% endblock %}

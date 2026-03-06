@@ -3,7 +3,7 @@
 {% block page_title %}Бронирования{% endblock %}
 
 {% block content %}
-<div class="mb-4">
+<div class="d-flex justify-content-between align-items-center mb-4">
     <div class="btn-group" role="group">
         <a href="{{ url_for('admin_bookings', status='all') }}" 
            class="btn btn-{{ 'primary' if status_filter == 'all' else 'outline-primary' }}">
@@ -22,13 +22,16 @@
             Отменены
         </a>
     </div>
+    <a href="{{ url_for('admin_booking_add') }}" class="btn btn-primary">
+        <i class="bi bi-plus-lg me-1"></i> Добавить бронирование
+    </a>
 </div>
 
 <div class="card border-0 shadow-sm">
     <div class="card-body p-0">
         <div class="table-responsive">
             <table class="table table-hover align-middle mb-0">
-                <thead class="table-light">
+                <thead>
                     <tr>
                         <th>ID</th>
                         <th>Гость</th>
@@ -59,7 +62,7 @@
                         <td class="fw-bold">{{ booking.total_price|format_price }} ₽</td>
                         <td>
                             {% if booking.status == 'pending' %}
-                                <span class="badge bg-warning text-dark">Ожидает</span>
+                                <span class="badge bg-warning" style="color: #000;">Ожидает</span>
                             {% elif booking.status == 'confirmed' %}
                                 <span class="badge bg-success">Подтверждено</span>
                             {% else %}
@@ -67,24 +70,23 @@
                             {% endif %}
                         </td>
                         <td class="text-end">
-                            {% if booking.status == 'pending' %}
-                                <div class="btn-group btn-group-sm" role="group">
-                                    <form action="{{ url_for('admin_booking_confirm', booking_id=booking.id) }}" 
-                                          method="POST" style="display: inline;">
-                                        <button type="submit" class="btn btn-success" title="Подтвердить">
+                            <div class="d-flex justify-content-end gap-1">
+                                <a href="{{ url_for('admin_booking_edit', booking_id=booking.id) }}" class="btn btn-sm btn-outline-primary" title="Редактировать">
+                                    <i class="bi bi-pencil"></i>
+                                </a>
+                                {% if booking.status == 'pending' %}
+                                    <form action="{{ url_for('admin_booking_confirm', booking_id=booking.id) }}" method="POST">
+                                        <button type="submit" class="btn btn-sm btn-success" title="Подтвердить">
                                             <i class="bi bi-check-lg"></i>
                                         </button>
                                     </form>
-                                    <form action="{{ url_for('admin_booking_cancel', booking_id=booking.id) }}" 
-                                          method="POST" style="display: inline;">
-                                        <button type="submit" class="btn btn-outline-danger" title="Отменить">
+                                    <form action="{{ url_for('admin_booking_cancel', booking_id=booking.id) }}" method="POST">
+                                        <button type="submit" class="btn btn-sm btn-outline-danger" title="Отменить">
                                             <i class="bi bi-x-lg"></i>
                                         </button>
                                     </form>
-                                </div>
-                            {% else %}
-                                <span class="text-muted">-</span>
-                            {% endif %}
+                                {% endif %}
+                            </div>
                         </td>
                     </tr>
                     {% else %}

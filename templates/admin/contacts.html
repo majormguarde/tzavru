@@ -7,7 +7,7 @@
     <div class="card-body p-0">
         <div class="table-responsive">
             <table class="table table-hover align-middle mb-0">
-                <thead class="table-light">
+                <thead>
                     <tr>
                         <th>Дата</th>
                         <th>Отправитель</th>
@@ -18,13 +18,13 @@
                 </thead>
                 <tbody>
                     {% for contact in contacts %}
-                    <tr class="{% if not contact.is_processed %}bg-warning-subtle{% endif %}">
+                    <tr class="{% if not contact.is_processed %}bg-warning-subtle{% endif %}" {% if not contact.is_processed %}style="color: #000 !important;"{% endif %}>
                         <td class="text-nowrap"><small>{{ contact.created_at.strftime('%d.%m.%Y %H:%M') }}</small></td>
                         <td>
                             <div class="fw-bold">{{ contact.name }}</div>
-                            <div class="small text-muted">{{ contact.email }}</div>
+                            <div class="small text-muted" {% if not contact.is_processed %}style="color: #444 !important;"{% endif %}>{{ contact.email }}</div>
                             {% if contact.phone %}
-                            <div class="small text-muted">{{ contact.phone }}</div>
+                            <div class="small text-muted" {% if not contact.is_processed %}style="color: #444 !important;"{% endif %}>{{ contact.phone }}</div>
                             {% endif %}
                         </td>
                         <td><small>{{ contact.message }}</small></td>
@@ -32,7 +32,7 @@
                             {% if contact.is_processed %}
                                 <span class="badge bg-success">Обработан</span>
                             {% else %}
-                                <span class="badge bg-warning text-dark">Новый</span>
+                                <span class="badge bg-warning" style="color: #000;">Новый</span>
                             {% endif %}
                         </td>
                         <td class="text-end">

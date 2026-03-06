@@ -316,7 +316,8 @@ body {
 
 .contact-form input::placeholder,
 .contact-form textarea::placeholder {
-    color: var(--text-muted);
+    color: rgba(255, 255, 255, 0.6) !important;
+    opacity: 1;
 }
 
 .contact-form input:focus,
@@ -644,4 +645,55 @@ body {
     border-radius: 50%;
     padding: 1.5rem;
     background-size: 50%;
+}
+
+/* ==================== GLOBAL CONTRAST FIXES ==================== */
+/* Ensure text-muted is readable on dark background */
+.text-muted {
+    color: var(--text-muted) !important;
+}
+
+/* Ensure placeholders are readable */
+::-webkit-input-placeholder {
+    color: rgba(255, 255, 255, 0.6) !important;
+    opacity: 1;
+}
+::-moz-placeholder {
+    color: rgba(255, 255, 255, 0.6) !important;
+    opacity: 1;
+}
+:-ms-input-placeholder {
+    color: rgba(255, 255, 255, 0.6) !important;
+    opacity: 1;
+}
+::-ms-input-placeholder {
+    color: rgba(255, 255, 255, 0.6) !important;
+    opacity: 1;
+}
+::placeholder {
+    color: rgba(255, 255, 255, 0.6) !important;
+    opacity: 1;
+}
+
+/* Dropdown options visibility */
+option {
+    background-color: var(--bg-dark);
+    color: var(--text-light);
+}
+
+/* Selection color */
+::selection {
+    background: var(--secondary-color);
+    color: var(--primary-color);
+}
+
+/* Ensure links in text are visible */
+p a, li a {
+    color: var(--secondary-color);
+    text-decoration: none;
+}
+
+p a:hover, li a:hover {
+    color: #fff;
+    text-decoration: underline;
 }
