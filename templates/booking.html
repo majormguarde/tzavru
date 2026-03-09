@@ -150,7 +150,7 @@
                                     <label class="form-label">Опции</label>
                                     <div class="card border-0 booking-options-panel">
                                         <div class="card-body">
-                                            <div class="row g-2 booking-options-header">
+                                            <div class="row g-2 booking-options-header d-none d-md-flex">
                                                 <div class="col-md-5">Опция</div>
                                                 <div class="col-md-2">Кол-во</div>
                                                 <div class="col-md-2 text-md-end">Тариф</div>
@@ -158,7 +158,7 @@
                                             </div>
                                             {% for property_option in property_options %}
                                             <div class="row g-2 align-items-center mb-2 booking-option-row">
-                                                <div class="col-md-5">
+                                                <div class="col-12 col-md-5">
                                                     <div class="form-check">
                                                         <input class="form-check-input booking-option-input" type="checkbox"
                                                                name="selected_options" value="{{ property_option.option_type_id }}"
@@ -169,7 +169,8 @@
                                                         </label>
                                                     </div>
                                                 </div>
-                                                <div class="col-md-2">
+                                                <div class="col-4 col-md-2">
+                                                    <div class="d-md-none text-muted small mb-1">Кол-во</div>
                                                     <input type="number"
                                                            class="form-control form-control-sm booking-option-qty"
                                                            name="option_qty_{{ property_option.option_type_id }}"
@@ -178,12 +179,16 @@
                                                            step="1"
                                                            disabled>
                                                 </div>
-                                                <div class="col-md-2 text-md-end">
+                                                <div class="col-4 col-md-2 text-md-end">
+                                                    <div class="d-md-none text-muted small mb-1">Тариф</div>
                                                     <small class="text-muted">
                                                         {{ property_option.option_type.price|format_price }} ₽{% if property_option.option_type.unit_type %}/{{ property_option.option_type.unit_type.short_name }}{% endif %}
                                                     </small>
                                                 </div>
-                                                <div class="col-md-3 booking-option-cost option-line-cost">0 ₽</div>
+                                                <div class="col-4 col-md-3 booking-option-cost option-line-cost text-end">
+                                                    <div class="d-md-none text-muted small mb-1">Итого</div>
+                                                    0 ₽
+                                                </div>
                                             </div>
                                             {% endfor %}
                                             <div class="booking-options-total-panel">

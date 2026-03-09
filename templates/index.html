@@ -7,7 +7,19 @@
 <script>
     document.addEventListener('DOMContentLoaded', function() {
         // Initialize map centered on Pskov region (approx)
-        var map = L.map('map-container').setView([57.819, 28.332], 8);
+        var map = L.map('map-container', {
+            scrollWheelZoom: false, // Disable scroll zoom to prevent trapping page scroll
+            dragging: !L.Browser.mobile // Optional: disable dragging on mobile if it interferes with vertical scrolling
+        }).setView([57.819, 28.332], 8);
+
+        // Enable scroll wheel zoom only after clicking on the map
+        map.on('click', function() {
+            if (map.scrollWheelZoom.enabled()) {
+                map.scrollWheelZoom.disable();
+            } else {
+                map.scrollWheelZoom.enable();
+            }
+        });
 
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
@@ -137,7 +149,7 @@
         
         <div class="row g-4">
             {% for property in properties %}
-            <div class="col-lg-4 col-md-6">
+            <div class="col-12 col-md-6 col-lg-4">
                 <div class="property-card h-100">
                     <div class="property-image-wrapper">
                         <img src="{{ property.image_url }}" alt="{{ property.name }}" class="property-image">
