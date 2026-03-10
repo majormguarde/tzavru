@@ -658,6 +658,17 @@ def _webauthn_rp_name():
     settings = SiteSettings.query.first()
     return settings.site_name if settings and settings.site_name else 'Imperial Collection'
 
+def _webauthn_credential_from_payload(credential_cls, payload):
+    if hasattr(credential_cls, 'model_validate'):
+        return credential_cls.model_validate(payload)
+    if hasattr(credential_cls, 'parse_obj'):
+        return credential_cls.parse_obj(payload)
+    if hasattr(credential_cls, 'parse_raw'):
+        return credential_cls.parse_raw(json.dumps(payload, ensure_ascii=False))
+    if hasattr(credential_cls, 'from_dict'):
+        return credential_cls.from_dict(payload)
+    return credential_cls(**payload)
+
 @app.route('/api/webauthn/registration/options', methods=['POST'])
 def webauthn_registration_options():
     try:
@@ -717,7 +728,9 @@ def webauthn_registration_verify():
         return jsonify({'status': 'error', 'error': 'Сессия регистрации истекла'}), 400
 
     try:
-        credential = RegistrationCredential.parse_raw(json.dumps(payload, ensure_ascii=False))
+        credential_payload = dict(payload)
+        credential_payload.pop('booking_token', None)
+        credential = _webauthn_credential_from_payload(RegistrationCredential, credential_payload)
         verification = verify_registration_response(
             credential=credential,
             expected_challenge=base64url_to_bytes(challenge_b64),
@@ -810,7 +823,9 @@ def webauthn_authentication_verify():
         return jsonify({'status': 'error', 'error': 'Passkey не найден'}), 404
 
     try:
-        credential = AuthenticationCredential.parse_raw(json.dumps(payload, ensure_ascii=False))
+        credential_payload = dict(payload)
+        credential_payload.pop('booking_token', None)
+        credential = _webauthn_credential_from_payload(AuthenticationCredential, credential_payload)
         verification = verify_authentication_response(
             credential=credential,
             expected_challenge=base64url_to_bytes(challenge_b64),
