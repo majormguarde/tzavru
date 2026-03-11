@@ -6,18 +6,30 @@
 <div class="property-detail-page">
     <!-- Hero -->
     <div class="property-hero" style="position: relative; overflow: hidden;">
+        <!-- Breadcrumbs at the top of Hero -->
+        <div class="position-fixed top-0 w-100" style="z-index: 1050; padding-top: 80px; padding-left: 0; pointer-events: none;">
+            <div class="container">
+                <nav aria-label="breadcrumb" style="pointer-events: auto;">
+                    <ol class="breadcrumb mb-0 py-2 px-3 rounded-3" style="background-color: rgba(0,0,0,0.5); display: inline-flex;">
+                        <li class="breadcrumb-item"><a href="{{ url_for('index') }}" class="text-white text-decoration-none opacity-75 hover-opacity-100">Главная</a></li>
+                        <li class="breadcrumb-item active text-white" aria-current="page">{{ property.name }}</li>
+                    </ol>
+                </nav>
+            </div>
+        </div>
+
         <!-- Carousel Background -->
         <div id="propertyHeroCarousel" class="carousel slide property-hero-carousel" data-bs-ride="carousel" data-bs-interval="4000" data-bs-pause="hover">
             <div class="carousel-inner h-100">
                 <!-- Main Image (Index 0) -->
                 <div class="carousel-item active h-100">
-                    <img src="{{ property.image_url }}" class="d-block w-100 h-100" style="object-fit: cover;" alt="{{ property.name }}">
+                    <img src="{{ property.image_url }}" class="d-block w-100 h-100" style="object-fit: cover; cursor: pointer;" alt="{{ property.name }}" onclick="openImageModal(this.src)">
                 </div>
                 <!-- Gallery Images (Index 1+) -->
                 {% if property.gallery_urls %}
                     {% for img_url in property.gallery_urls|from_json %}
                     <div class="carousel-item h-100">
-                        <img src="{{ img_url }}" class="d-block w-100 h-100" style="object-fit: cover;" alt="Gallery Image">
+                        <img src="{{ img_url }}" class="d-block w-100 h-100" style="object-fit: cover; cursor: pointer;" alt="Gallery Image" onclick="openImageModal(this.src)">
                     </div>
                     {% endfor %}
                 {% endif %}
@@ -36,7 +48,7 @@
 
         <div class="hero-overlay"></div>
         <div class="container h-100 d-flex align-items-center property-hero-content">
-            <div class="text-white">
+            <div class="text-white w-100">
                 <div class="property-badge mb-3">
                     {% if property.property_type == 'hunting' %}
                         <i class="bi bi-crosshair"></i> Охотничий стан
@@ -126,7 +138,28 @@
                 carousel.to(index);
             }
         }
+        
+        function openImageModal(src) {
+            var modalImage = document.getElementById('modalImage');
+            modalImage.src = src;
+            var myModal = new bootstrap.Modal(document.getElementById('imageModal'));
+            myModal.show();
+        }
     </script>
+    
+    <!-- Image Modal -->
+    <div class="modal fade" id="imageModal" tabindex="-1" aria-labelledby="imageModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered modal-xl">
+            <div class="modal-content bg-transparent border-0 shadow-none">
+                <div class="modal-header border-0 p-0">
+                    <button type="button" class="btn-close btn-close-white position-absolute top-0 end-0 m-3" data-bs-dismiss="modal" aria-label="Close" style="z-index: 1056; filter: invert(1) grayscale(100%) brightness(200%);"></button>
+                </div>
+                <div class="modal-body p-0 text-center d-flex align-items-center justify-content-center" style="min-height: 200px;">
+                    <img src="" id="modalImage" class="img-fluid rounded shadow-lg" style="max-height: 90vh; max-width: 100%; object-fit: contain;">
+                </div>
+            </div>
+        </div>
+    </div>
     {% endif %}
 
     <div class="container py-5">
@@ -198,23 +231,38 @@
                 </div>
                 {% endif %}
             </div>
-            <div class="col-lg-4">
-                <div class="booking-sidebar">
-                    <div class="card border-0 shadow">
-                        <div class="card-body">
-                            <h4 class="mb-4">Забронировать</h4>
-                            <p class="price-display mb-4">
-                                <strong>{{ property.price_per_night|format_price }}</strong> ₽ / ночь
-                            </p>
-                            <a href="{{ url_for('booking', property_id=property.id) }}" 
-                               class="btn btn-primary w-100 btn-lg">
-                                <i class="bi bi-calendar-plus me-2"></i> Забронировать
-                            </a>
-                            <hr class="my-4">
-                            <a href="tel:+7-900-123-45-67" class="btn btn-outline-primary w-100">
-                                <i class="bi bi-telephone me-2"></i> Позвонить
-                            </a>
+            </div>
+        </div>
+
+        <!-- Fixed Bottom Booking Bar (Visible always on all devices) -->
+        <div class="fixed-bottom booking-bar-bottom neon-effect-bottom floating-animation">
+            <div class="container">
+                <div class="d-flex justify-content-between align-items-center py-3">
+                    <div class="d-flex align-items-center gap-3">
+                        <div class="d-none d-md-block">
+                            <div class="fw-bold text-white h5 mb-0">{{ property.name }}</div>
+                            <div class="small text-light opacity-75"><i class="bi bi-geo-alt-fill"></i> {{ property.location }}</div>
                         </div>
+                        <div class="d-md-none">
+                            <div class="small text-light opacity-75">Цена за ночь</div>
+                            <div class="fw-bold text-white h5 mb-0">{{ property.price_per_night|format_price }} ₽</div>
+                        </div>
+                    </div>
+                    
+                    <div class="d-flex align-items-center gap-3">
+                        <div class="text-end me-3 d-none d-md-block">
+                            <div class="small text-light opacity-75">Цена за ночь</div>
+                            <div class="fw-bold text-white h4 mb-0">{{ property.price_per_night|format_price }} ₽</div>
+                        </div>
+                        <a href="{{ site_settings.social_telegram if site_settings and site_settings.social_telegram else 'https://t.me/imperial_village' }}" target="_blank" class="btn d-flex align-items-center justify-content-center shadow-lg rounded-3" style="width: 55px; height: 55px; padding: 0; background-color: #229ED9; border-color: #229ED9; color: white;">
+                            <i class="bi bi-telegram" style="font-size: 2.5rem;"></i>
+                        </a>
+                        <a href="{{ url_for('booking', property_id=property.id) }}" class="btn btn-primary d-none d-md-inline-block px-5 btn-lg pulse-yellow-filled shadow-lg">
+                            Забронировать
+                        </a>
+                        <a href="{{ url_for('booking', property_id=property.id) }}" class="btn btn-primary d-md-none rounded-circle d-flex align-items-center justify-content-center pulse-yellow-filled shadow-lg" style="width: 55px; height: 55px; padding: 0;">
+                            <i class="bi bi-calendar-check fs-4"></i>
+                        </a>
                     </div>
                 </div>
             </div>

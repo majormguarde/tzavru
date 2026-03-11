@@ -328,6 +328,113 @@ body {
     box-shadow: 0 0 0 0.2rem rgba(45, 255, 153, 0.25);
 }
 
+/* ==================== BOOKING WIDGETS ==================== */
+.booking-card-glass {
+    background: rgba(10, 31, 26, 0.8) !important;
+    backdrop-filter: blur(15px);
+    -webkit-backdrop-filter: blur(15px);
+    border: 1px solid rgba(45, 255, 153, 0.2) !important;
+    color: #fff;
+    transition: all 0.3s ease;
+}
+
+.booking-card-glass:hover {
+    border-color: rgba(45, 255, 153, 0.5) !important;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.5) !important;
+}
+
+.neon-effect-bottom {
+    background: rgba(3, 15, 10, 0.98); /* Almost opaque dark background for high contrast */
+    border-top: 2px solid #2DFF99; /* Solid bright neon line */
+    box-shadow: 0 -4px 25px rgba(45, 255, 153, 0.4), 
+                0 -2px 10px rgba(45, 255, 153, 0.3); /* Stronger glow */
+}
+
+@keyframes floating-bar {
+    0% { transform: translateY(0); }
+    50% { transform: translateY(-3px); }
+    100% { transform: translateY(0); }
+}
+
+.floating-animation {
+    animation: floating-bar 3s ease-in-out infinite;
+}
+
+@keyframes pulse-yellow-flash {
+    0% {
+        box-shadow: 0 0 0 0 rgba(45, 255, 153, 0.7);
+        transform: scale(1);
+        background-color: var(--primary-color);
+        border-color: var(--primary-color);
+    }
+    50% {
+        box-shadow: 0 0 30px 15px rgba(0, 255, 0, 0.8); /* Bright green glow */
+        transform: scale(1.1);
+        background-color: #00ff00; /* Bright green */
+        border-color: #00ff00;
+        color: #000;
+    }
+    100% {
+        box-shadow: 0 0 0 0 rgba(45, 255, 153, 0.7);
+        transform: scale(1);
+        background-color: var(--primary-color);
+        border-color: var(--primary-color);
+    }
+}
+
+@keyframes pulse-yellow-outline-flash {
+    0% {
+        box-shadow: 0 0 0 0 rgba(45, 255, 153, 0.7);
+        transform: scale(1);
+        background-color: transparent;
+        color: #2DFF99;
+    }
+    50% {
+        box-shadow: 0 0 30px 15px rgba(0, 255, 0, 0.8);
+        transform: scale(1.1);
+        background-color: #00ff00;
+        color: #000;
+    }
+    100% {
+        box-shadow: 0 0 0 0 rgba(45, 255, 153, 0.7);
+        transform: scale(1);
+        background-color: transparent;
+        color: #2DFF99;
+    }
+}
+
+.pulse-yellow-filled {
+    animation: pulse-yellow-flash 2s infinite ease-in-out !important;
+}
+
+.pulse-yellow-outline {
+    animation: pulse-yellow-outline-flash 2s infinite ease-in-out !important;
+}
+
+@keyframes pulse-green-soft {
+    0% {
+        box-shadow: 0 0 0 0 rgba(45, 255, 153, 0.7);
+        transform: scale(1);
+    }
+    50% {
+        box-shadow: 0 0 30px 15px rgba(255, 255, 0, 0.8); /* Bright yellow glow */
+        transform: scale(1.03);
+    }
+    100% {
+        box-shadow: 0 0 0 0 rgba(45, 255, 153, 0.7);
+        transform: scale(1);
+    }
+}
+
+.pulse-animation {
+    animation: pulse-green-soft 2s infinite ease-in-out;
+}
+
+/* Add padding to body on ALL devices to account for fixed bottom bar */
+body {
+    padding-bottom: 120px;
+}
+
 /* ==================== FOOTER ==================== */
 .footer {
     background: var(--bg-dark);
