@@ -22,6 +22,13 @@ import requests
 import io
 import random
 import string
+from reportlab.pdfgen import canvas
+from reportlab.lib.pagesizes import A4
+from reportlab.lib import colors
+from reportlab.lib.units import cm
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
+from email.mime.application import MIMEApplication
 
 def slugify(value):
     """
@@ -92,7 +99,7 @@ def _generate_token(nbytes=32):
 def _sha256_hex(value):
     return hashlib.sha256(value.encode('utf-8')).hexdigest()
 
-def send_email_notification(subject, html_body, recipient=None):
+def send_email_notification(subject, html_body, recipient=None, attachment_data=None, attachment_name="invoice.pdf"):
     try:
         with app.app_context():
             settings = SiteSettings.query.first()
@@ -113,6 +120,11 @@ def send_email_notification(subject, html_body, recipient=None):
             msg['Subject'] = subject
             
             msg.attach(MIMEText(html_body, 'html'))
+            
+            if attachment_data:
+                part = MIMEApplication(attachment_data, Name=attachment_name)
+                part['Content-Disposition'] = f'attachment; filename="{attachment_name}"'
+                msg.attach(part)
             
             # Add timeout to prevent blocking
             server = smtplib.SMTP(settings.smtp_server, settings.smtp_port, timeout=10)
@@ -426,12 +438,135 @@ def get_busy_dates(property_id):
     
     busy_dates = []
     for booking in bookings:
+        # Subtract one day from check_out for calendar display
+        # This allows new guests to check in on the day of checkout
+        check_out_display = booking.check_out - timedelta(days=1)
+        
+        # Ensure we don't have invalid range (if check_in == check_out, though validation prevents this)
+        if check_out_display < booking.check_in:
+            check_out_display = booking.check_in
+
         busy_dates.append({
             'from': booking.check_in.strftime('%Y-%m-%d'),
-            'to': booking.check_out.strftime('%Y-%m-%d')
+            'to': check_out_display.strftime('%Y-%m-%d')
         })
         
     return jsonify(busy_dates)
+
+def format_date_ru(date_obj):
+    months = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря']
+    days = ['Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота', 'Воскресенье']
+    return f"{date_obj.day} {months[date_obj.month - 1]} {date_obj.year} ({days[date_obj.weekday()]})"
+
+def generate_invoice_pdf(booking):
+    buffer = io.BytesIO()
+    c = canvas.Canvas(buffer, pagesize=A4)
+    width, height = A4
+
+    # Register font
+    font_name = 'Helvetica' # Fallback
+    try:
+        pdfmetrics.getFont('Arial')
+        font_name = 'Arial'
+    except:
+        try:
+            pdfmetrics.registerFont(TTFont('Arial', 'C:\\Windows\\Fonts\\arial.ttf'))
+            font_name = 'Arial'
+        except Exception as e:
+            print(f"Font loading error: {e}")
+            pass
+
+    # Header
+    c.setFont(font_name, 20)
+    c.drawString(2*cm, height - 2*cm, f"Счет-подтверждение бронирования № {booking.id}")
+    
+    c.setFont(font_name, 12)
+    c.drawString(2*cm, height - 3.5*cm, f"Дата формирования: {datetime.now().strftime('%d.%m.%Y')}")
+    
+    # Supplier Info
+    c.setFont(font_name, 14)
+    c.drawString(2*cm, height - 5*cm, "Исполнитель:")
+    c.setFont(font_name, 12)
+    settings = SiteSettings.query.first()
+    site_name = settings.site_name if settings else "Imperial Collection"
+    c.drawString(2*cm, height - 5.7*cm, site_name)
+    if settings:
+        c.drawString(2*cm, height - 6.2*cm, f"Email: {settings.email_info}")
+        c.drawString(2*cm, height - 6.7*cm, f"Tel: {settings.phone_main}")
+    
+    # Client Info
+    c.setFont(font_name, 14)
+    c.drawString(2*cm, height - 8*cm, "Заказчик:")
+    c.setFont(font_name, 12)
+    c.drawString(2*cm, height - 8.7*cm, f"{booking.guest_name}")
+    c.drawString(2*cm, height - 9.2*cm, f"Email: {booking.guest_email}")
+    c.drawString(2*cm, height - 9.7*cm, f"Tel: {booking.guest_phone}")
+    
+    # Booking Details
+    y = height - 11*cm
+    c.setFont(font_name, 14)
+    c.drawString(2*cm, y, "Детали бронирования:")
+    y -= 1*cm
+    
+    c.setFont(font_name, 12)
+    c.drawString(2*cm, y, f"Объект: {booking.property.name}")
+    y -= 0.7*cm
+    c.drawString(2*cm, y, f"Заезд: {format_date_ru(booking.check_in)}")
+    y -= 0.7*cm
+    c.drawString(2*cm, y, f"Выезд: {format_date_ru(booking.check_out)}")
+    y -= 0.7*cm
+    days = (booking.check_out - booking.check_in).days
+    c.drawString(2*cm, y, f"Количество ночей: {days}")
+    y -= 0.7*cm
+    c.drawString(2*cm, y, f"Гостей: {booking.guests_count}")
+    
+    # Table Header
+    y -= 2*cm
+    c.line(2*cm, y+0.2*cm, width-2*cm, y+0.2*cm)
+    c.setFont(font_name, 10)
+    c.drawString(2*cm, y, "Наименование")
+    c.drawString(10*cm, y, "Кол-во")
+    c.drawString(13*cm, y, "Цена")
+    c.drawString(16*cm, y, "Сумма")
+    c.line(2*cm, y-0.2*cm, width-2*cm, y-0.2*cm)
+    y -= 0.8*cm
+    
+    # Base Stay
+    base_price = booking.property.price_per_night * days
+    c.drawString(2*cm, y, f"Проживание ({days} ночей)")
+    c.drawString(10*cm, y, "1")
+    c.drawString(13*cm, y, f"{base_price:,.2f} руб.")
+    c.drawString(16*cm, y, f"{base_price:,.2f} руб.")
+    y -= 0.6*cm
+    
+    # Options
+    if booking.selected_options:
+        for option in booking.selected_options:
+            opt_total = option.price * option.quantity * days
+            unit = "шт."
+            if option.option_type and option.option_type.unit_type:
+                unit = option.option_type.unit_type.short_name
+            
+            c.drawString(2*cm, y, f"{option.option_name}")
+            c.drawString(10*cm, y, f"{option.quantity} {unit} x {days} дн.")
+            c.drawString(13*cm, y, f"{option.price:,.2f} руб.")
+            c.drawString(16*cm, y, f"{opt_total:,.2f} руб.")
+            y -= 0.6*cm
+            
+    # Total
+    y -= 0.5*cm
+    c.line(2*cm, y+0.2*cm, width-2*cm, y+0.2*cm)
+    c.setFont(font_name, 12)
+    c.drawString(13*cm, y-0.5*cm, "ИТОГО:")
+    c.drawString(16*cm, y-0.5*cm, f"{booking.total_price:,.2f} руб.")
+    
+    # Footer
+    c.setFont(font_name, 10)
+    c.drawString(2*cm, 2*cm, "Спасибо за ваш выбор! Ждем вас в гости.")
+    
+    c.save()
+    buffer.seek(0)
+    return buffer.read()
 
 @app.route('/api/webpush/public-key')
 def webpush_public_key():
@@ -951,11 +1086,22 @@ def booking(property_id):
                 selected_options_html = ''
                 if booking.selected_options:
                     option_days = (booking.check_out - booking.check_in).days
-                    selected_options_html = '<p><strong>Опции:</strong><br>' + '<br>'.join(
-                        [f"{item.option_name} ({item.quantity} шт. × {option_days} ночей, +{(item.price * item.quantity * option_days):,.0f} руб.)" for item in booking.selected_options]
-                    ) + '</p>'
+                    
+                    options_list = []
+                    for item in booking.selected_options:
+                        unit = "шт."
+                        if item.option_type and item.option_type.unit_type:
+                            unit = item.option_type.unit_type.short_name
+                        
+                        price_total = item.price * item.quantity * option_days
+                        options_list.append(f"{item.option_name} ({item.quantity} {unit} × {option_days} ночей, +{price_total:,.0f} руб.)")
+                        
+                    selected_options_html = '<p><strong>Опции:</strong><br>' + '<br>'.join(options_list) + '</p>'
 
                 success_url = url_for('booking_success', booking_token=booking.booking_token, _external=True)
+                
+                check_in_formatted = format_date_ru(booking.check_in)
+                check_out_formatted = format_date_ru(booking.check_out)
                 
                 html_body = f"""
                 <h3>Новое бронирование!</h3>
@@ -963,17 +1109,27 @@ def booking(property_id):
                 <p><strong>Гость:</strong> {booking.guest_name}</p>
                 <p><strong>Email:</strong> {booking.guest_email}</p>
                 <p><strong>Телефон:</strong> {booking.guest_phone}</p>
-                <p><strong>Даты:</strong> {booking.check_in} - {booking.check_out}</p>
+                <p><strong>Даты:</strong> {check_in_formatted} - {check_out_formatted}</p>
                 <p><strong>Гостей:</strong> {booking.guests_count}</p>
-                <p><strong>Сумма:</strong> {booking.total_price} руб.</p>
+                <p><strong>Сумма:</strong> {booking.total_price:,.0f} руб.</p>
                 {selected_options_html}
                 <hr>
                 <p>Чтобы включить уведомления и Passkey на смартфоне, откройте эту ссылку: <br>
                 <a href="{success_url}">{success_url}</a></p>
                 """
-                # Run in background thread to avoid blocking response
+                
+                # Generate Invoice PDF
+                pdf_data = generate_invoice_pdf(booking)
+                pdf_name = f"invoice_{booking.id}.pdf"
+                
+                # Send to Admin
                 threading.Thread(target=send_email_notification, 
-                               args=(f"Новое бронирование: {property.name}", html_body)).start()
+                               args=(f"Новое бронирование: {property.name}", html_body, None, pdf_data, pdf_name)).start()
+
+                # Send to Guest
+                threading.Thread(target=send_email_notification, 
+                               args=(f"Подтверждение бронирования: {property.name}", html_body, booking.guest_email, pdf_data, pdf_name)).start()
+
             except Exception as e:
                 print(f"Error sending booking email: {e}")
 
@@ -999,9 +1155,17 @@ def booking(property_id):
                     selected_options_tg = ''
                     if booking.selected_options:
                         option_days = (booking.check_out - booking.check_in).days
-                        selected_options_tg = '\n🧩 <b>Опции:</b> ' + ', '.join(
-                            [f"{item.option_name} ({item.quantity} шт. × {option_days}, +{(item.price * item.quantity * option_days):,.0f} руб.)" for item in booking.selected_options]
-                        )
+                        
+                        tg_options_list = []
+                        for item in booking.selected_options:
+                            unit = "шт."
+                            if item.option_type and item.option_type.unit_type:
+                                unit = item.option_type.unit_type.short_name
+                            
+                            price_total = item.price * item.quantity * option_days
+                            tg_options_list.append(f"{item.option_name} ({item.quantity} {unit} × {option_days}, +{price_total:,.0f} руб.)")
+                            
+                        selected_options_tg = '\n🧩 <b>Опции:</b> ' + ', '.join(tg_options_list)
 
                     tg_message = f"""
 <b>Новое бронирование! #{booking.id}</b>
