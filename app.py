@@ -1765,7 +1765,10 @@ def admin_booking_edit(booking_id):
                 }
                 msg = status_texts.get(booking.status, f'Статус вашего бронирования изменен на: {booking.status}')
                 
-                # Notify in background
+                # Notify in background with app context
+                # Need to use current app context or ensure it's available in thread
+                # Since notify_booking_devices creates its own app context, it's fine.
+                # However, for robustness we can pass specific parameters.
                 threading.Thread(target=notify_booking_devices, 
                                args=(booking.id, 'Imperial Collection', msg)).start()
             
@@ -1774,6 +1777,10 @@ def admin_booking_edit(booking_id):
             return redirect(url_for('admin_bookings'))
         except ValueError as e:
             flash(f'Ошибка данных: {e}', 'error')
+        except Exception as e:
+            db.session.rollback()
+            print(f"Error updating booking: {e}")
+            flash(f'Ошибка сервера: {str(e)}', 'error')
 
     properties = Property.query.order_by(Property.name).all()
     return render_template('admin/edit_booking.html', booking=booking, properties=properties)
@@ -1794,20 +1801,58 @@ def admin_booking_send_push(booking_id):
 @app.route('/admin/bookings/unbind-passkey/<int:passkey_id>', methods=['POST'])
 @login_required
 def admin_booking_unbind_passkey(passkey_id):
-    passkey = BookingPasskey.query.get_or_404(passkey_id)
-    booking_id = passkey.booking_id
-    db.session.delete(passkey)
-    db.session.commit()
-    flash('Passkey успешно удален', 'success')
-    return redirect(url_for('admin_booking_edit', booking_id=booking_id))
+    try:
+        passkey = BookingPasskey.query.get_or_404(passkey_id)
+        booking_id = passkey.booking_id
+        db.session.delete(passkey)
+        db.session.commit()
+        flash('Passkey успешно удален', 'success')
+        return redirect(url_for('admin_booking_edit', booking_id=booking_id))
+    except Exception as e:
+        db.session.rollback()
+        flash(f'Ошибка удаления Passkey: {e}', 'error')
+        # Try to return to booking edit if possible, else bookings list
+        try:
+            return redirect(url_for('admin_booking_edit', booking_id=passkey.booking_id))
+        except:
+            return redirect(url_for('admin_bookings'))
 
 @app.route('/admin/bookings/delete/<int:booking_id>', methods=['POST'])
 @login_required
 def admin_booking_delete(booking_id):
-    booking = Booking.query.get_or_404(booking_id)
-    db.session.delete(booking)
-    db.session.commit()
-    flash('Бронирование удалено', 'success')
+    try:
+        booking = Booking.query.get_or_404(booking_id)
+        
+        # Manually delete related records if cascade is not set properly or to be safe
+        # SQLAlchemy cascade="all, delete-orphan" should handle this, but let's be safe
+        # if we encounter foreign key errors.
+        # Check models.py:
+        # property = db.relationship('Property', backref=db.backref('bookings', lazy=True, cascade="all, delete-orphan"))
+        # booking = db.relationship('Booking', backref=db.backref('devices', lazy=True, cascade="all, delete-orphan"))
+        # booking = db.relationship('Booking', backref=db.backref('passkeys', lazy=True, cascade="all, delete-orphan"))
+        # booking = db.relationship('Booking', backref=db.backref('selected_options', lazy=True, cascade="all, delete-orphan"))
+        # booking = db.relationship('Booking', backref=db.backref('notifications', lazy=True, cascade="all, delete-orphan"))
+        
+        # If cascade is set on the 'one' side (Property), it deletes bookings when Property is deleted.
+        # But for deleting Booking, we rely on relationships defined in other models pointing TO Booking
+        # OR backrefs in Booking model.
+        
+        # In models.py:
+        # BookingDevice has backref 'booking' with cascade.
+        # BookingPasskey has backref 'booking' with cascade.
+        # BookingOption has backref 'booking' with cascade.
+        # NotificationLog has backref 'booking' with cascade.
+        
+        # So deletion should work fine. If it fails, it might be due to SQLite locking or other issues.
+        
+        db.session.delete(booking)
+        db.session.commit()
+        flash('Бронирование удалено', 'success')
+    except Exception as e:
+        db.session.rollback()
+        print(f"Error deleting booking: {e}")
+        flash(f'Ошибка при удалении: {str(e)}', 'error')
+        
     return redirect(url_for('admin_bookings'))
 
 @app.route('/admin/reviews')
