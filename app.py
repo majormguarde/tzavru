@@ -23,6 +23,7 @@ from email.header import decode_header
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.mime.application import MIMEApplication
+from sqlalchemy import inspect
 import requests
 import io
 import random
@@ -191,7 +192,8 @@ def check_incoming_mail_for_confirmations():
     try:
         with app.app_context():
             # Check if the database is ready by checking for a core table
-            if not db.engine.has_table('site_settings'):
+            inspector = inspect(db.engine)
+            if not inspector.has_table('site_settings'):
                 # Silently return if table doesn't exist, as this can happen during migrations
                 return False
 
