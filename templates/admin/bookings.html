@@ -51,6 +51,10 @@
                             <div class="small text-muted">
                                 <i class="bi bi-telephone me-1"></i> {{ booking.guest_phone }}
                             </div>
+                            <div class="small text-muted" title="{{ 'Email подтвержден' if booking.is_email_confirmed else 'Email не подтвержден' }}">
+                                <i class="bi bi-envelope{{ '-check-fill text-success' if booking.is_email_confirmed else '-dash text-warning' }} me-1"></i> 
+                                {{ booking.guest_email }}
+                            </div>
                         </td>
                         <td>{{ booking.property.name }}</td>
                         <td>

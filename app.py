@@ -16,8 +16,13 @@ from functools import wraps
 import re
 import unicodedata
 import smtplib
+import imaplib
+import email
+import time
+from email.header import decode_header
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from email.mime.application import MIMEApplication
 import requests
 import io
 import random
@@ -176,6 +181,109 @@ def send_sms_notification(phone, message):
                 
     except Exception as e:
         print(f"Failed to send SMS: {e}")
+        return False
+
+def check_incoming_mail_for_confirmations():
+    """
+    Checks incoming mail for confirmation codes and updates bookings.
+    Should be run periodically.
+    """
+    try:
+        with app.app_context():
+            settings = SiteSettings.query.first()
+            if not settings or not settings.incoming_mail_server:
+                # print("Incoming mail settings not configured")
+                return False
+
+            if not settings.incoming_mail_login or not settings.incoming_mail_password:
+                # print("Incoming mail credentials not configured")
+                return False
+
+            # Connect to IMAP
+            try:
+                if settings.incoming_mail_use_ssl:
+                    mail = imaplib.IMAP4_SSL(settings.incoming_mail_server, settings.incoming_mail_port)
+                else:
+                    mail = imaplib.IMAP4(settings.incoming_mail_server, settings.incoming_mail_port)
+            except Exception as e:
+                print(f"IMAP Connection Error: {e}")
+                return False
+
+            try:
+                mail.login(settings.incoming_mail_login, settings.incoming_mail_password)
+                mail.select("inbox")
+
+                # Search for unread emails
+                status, messages = mail.search(None, "UNSEEN")
+                if status != "OK":
+                    mail.logout()
+                    return False
+
+                email_ids = messages[0].split()
+                if email_ids:
+                    print(f"Checking {len(email_ids)} unread emails...")
+
+                for e_id in email_ids:
+                    status, msg_data = mail.fetch(e_id, "(RFC822)")
+                    for response_part in msg_data:
+                        if isinstance(response_part, tuple):
+                            msg = email.message_from_bytes(response_part[1])
+                            
+                            # Get subject
+                            subject_header = decode_header(msg["Subject"])
+                            subject = ""
+                            for part, encoding in subject_header:
+                                if isinstance(part, bytes):
+                                    subject += part.decode(encoding or "utf-8", errors="replace")
+                                else:
+                                    subject += str(part)
+                            
+                            # Get body
+                            body = ""
+                            if msg.is_multipart():
+                                for part in msg.walk():
+                                    if part.get_content_type() == "text/plain":
+                                        payload = part.get_payload(decode=True)
+                                        if payload:
+                                            try:
+                                                body = payload.decode(errors="replace")
+                                            except:
+                                                pass
+                                        break
+                            else:
+                                payload = msg.get_payload(decode=True)
+                                if payload:
+                                    try:
+                                        body = payload.decode(errors="replace")
+                                    except:
+                                        pass
+
+                            # Combine subject and body for search
+                            content = f"{subject} {body}"
+                            
+                            # Search for 6-digit code
+                            codes = re.findall(r'\b\d{6}\b', content)
+                            
+                            for code in codes:
+                                booking = Booking.query.filter_by(confirmation_code=code, is_email_confirmed=False).first()
+                                if booking:
+                                    booking.is_email_confirmed = True
+                                    db.session.commit()
+                                    print(f"Booking {booking.id} email confirmed with code {code}")
+                                    
+                                    # Optional: Send confirmation back to user? 
+                                    # Or notify admin?
+
+                mail.close()
+                mail.logout()
+                return True
+
+            except Exception as e:
+                print(f"IMAP Processing Error: {e}")
+                return False
+                
+    except Exception as e:
+        print(f"Error in check_incoming_mail_for_confirmations: {e}")
         return False
 
 def send_telegram_notification(chat_id, message):
@@ -638,6 +746,28 @@ def send_booking_info_email(booking_id, subject, header_text):
                 print(f"Error in send_booking_info_email: {e}")
 
     threading.Thread(target=_send, args=(app.app_context(),)).start()
+
+
+def send_deletion_notification(booking_data):
+    """
+    Sends deletion email asynchronously using provided booking data.
+    booking_data: dict with keys: id, guest_email, guest_name, property_name, check_in, check_out
+    """
+    def _send(app_context, data):
+        with app_context:
+            try:
+                subject = f"Бронирование #{data['id']} удалено: {data['property_name']}"
+                html_body = f"""
+                <h3>Бронирование удалено</h3>
+                <p>Здравствуйте, {data['guest_name']}!</p>
+                <p>Ваше бронирование #{data['id']} в объекте "{data['property_name']}" ({data['check_in']} - {data['check_out']}) было удалено.</p>
+                <p>Если это ошибка, пожалуйста, свяжитесь с нами.</p>
+                """
+                send_email_notification(subject, html_body, recipient=data['guest_email'])
+            except Exception as e:
+                print(f"Error sending deletion email: {e}")
+
+    threading.Thread(target=_send, args=(app.app_context(), booking_data)).start()
 
 
 @app.route('/api/webpush/public-key')
@@ -1126,6 +1256,7 @@ def booking(property_id):
 
             total_price = days * guests_count * property.price_per_night + options_total
 
+            confirmation_code = ''.join(secrets.choice(string.digits) for _ in range(6))
             booking = Booking(
                 property_id=property_id,
                 guest_name=request.form['guest_name'],
@@ -1137,7 +1268,8 @@ def booking(property_id):
                 special_requests=request.form.get('special_requests', ''),
                 total_price=total_price,
                 status='pending',
-                booking_token=_generate_token()
+                booking_token=_generate_token(),
+                confirmation_code=confirmation_code
             )
             db.session.add(booking)
             db.session.flush()
@@ -1175,12 +1307,37 @@ def booking(property_id):
                 check_in_formatted = format_date_ru(booking.check_in)
                 check_out_formatted = format_date_ru(booking.check_out)
                 
-                html_body = f"""
+                settings = SiteSettings.query.first()
+                system_email = settings.email_info if settings else "info@imperial-collection.ru"
+
+                # Admin email body
+                html_body_admin = f"""
                 <h3>Новое бронирование!</h3>
                 <p><strong>Объект:</strong> {property.name}</p>
                 <p><strong>Гость:</strong> {booking.guest_name}</p>
                 <p><strong>Email:</strong> {booking.guest_email}</p>
                 <p><strong>Телефон:</strong> {booking.guest_phone}</p>
+                <p><strong>Даты:</strong> {check_in_formatted} - {check_out_formatted}</p>
+                <p><strong>Гостей:</strong> {booking.guests_count}</p>
+                <p><strong>Сумма:</strong> {booking.total_price:,.0f} руб.</p>
+                {selected_options_html}
+                <p><strong>Код подтверждения (для справки):</strong> {booking.confirmation_code}</p>
+                <hr>
+                <p>Чтобы увидеть подробности, откройте админ-панель.</p>
+                """
+
+                # Guest email body
+                html_body_guest = f"""
+                <h3>Бронирование #{booking.id} принято в обработку!</h3>
+                <p>Здравствуйте, {booking.guest_name}!</p>
+                <p>Ваше бронирование получено. Для завершения регистрации, пожалуйста, подтвердите ваш Email.</p>
+                <div style="background-color: #f8f9fa; padding: 15px; border-left: 5px solid #007bff; margin: 20px 0;">
+                    <p style="margin: 0;"><strong>Ваш код подтверждения:</strong></p>
+                    <h2 style="margin: 10px 0; color: #007bff;">{booking.confirmation_code}</h2>
+                    <p style="margin: 0;">Пожалуйста, отправьте этот код ответным письмом на адрес: <a href="mailto:{system_email}">{system_email}</a></p>
+                </div>
+                <p><strong>Детали бронирования:</strong></p>
+                <p><strong>Объект:</strong> {property.name}</p>
                 <p><strong>Даты:</strong> {check_in_formatted} - {check_out_formatted}</p>
                 <p><strong>Гостей:</strong> {booking.guests_count}</p>
                 <p><strong>Сумма:</strong> {booking.total_price:,.0f} руб.</p>
@@ -1196,11 +1353,11 @@ def booking(property_id):
                 
                 # Send to Admin
                 threading.Thread(target=send_email_notification, 
-                               args=(f"Новое бронирование: {property.name}", html_body, None, pdf_data, pdf_name)).start()
+                               args=(f"Новое бронирование: {property.name}", html_body_admin, None, pdf_data, pdf_name)).start()
 
                 # Send to Guest
                 threading.Thread(target=send_email_notification, 
-                               args=(f"Подтверждение бронирования: {property.name}", html_body, booking.guest_email, pdf_data, pdf_name)).start()
+                               args=(f"Подтверждение бронирования #{booking.id}", html_body_guest, booking.guest_email, pdf_data, pdf_name)).start()
 
             except Exception as e:
                 print(f"Error sending booking email: {e}")
@@ -2040,6 +2197,24 @@ def admin_booking_edit(booking_id):
     properties = Property.query.order_by(Property.name).all()
     return render_template('admin/edit_booking.html', booking=booking, properties=properties)
 
+@app.route('/admin/bookings/send-info/<int:booking_id>', methods=['POST'])
+@login_required
+def admin_booking_send_info(booking_id):
+    booking = Booking.query.get_or_404(booking_id)
+    try:
+        subject = f"Информация о бронировании #{booking.id}: {booking.property.name}"
+        message = f"Здравствуйте, {booking.guest_name}!<br><br>Направляем вам актуальную информацию о вашем бронировании."
+        
+        # Send email with PDF
+        send_booking_info_email(booking.id, subject, message)
+        
+        flash(f'Информационное письмо отправлено на {booking.guest_email}', 'success')
+    except Exception as e:
+        print(f"Error sending info email: {e}")
+        flash(f'Ошибка отправки письма: {e}', 'error')
+        
+    return redirect(url_for('admin_booking_edit', booking_id=booking.id))
+
 @app.route('/admin/bookings/send-push/<int:booking_id>', methods=['POST'])
 @login_required
 def admin_booking_send_push(booking_id):
@@ -2080,6 +2255,20 @@ def admin_booking_delete(booking_id):
     try:
         booking = Booking.query.get_or_404(booking_id)
         
+        # Send email notification before deletion
+        try:
+            booking_data = {
+                'id': booking.id,
+                'guest_email': booking.guest_email,
+                'guest_name': booking.guest_name,
+                'property_name': booking.property.name,
+                'check_in': booking.check_in,
+                'check_out': booking.check_out
+            }
+            send_deletion_notification(booking_data)
+        except Exception as e:
+            print(f"Error preparing deletion email: {e}")
+
         # Manually delete related records if cascade is not set properly or to be safe
         # SQLAlchemy cascade="all, delete-orphan" should handle this, but let's be safe
         # if we encounter foreign key errors.
@@ -2300,6 +2489,18 @@ def admin_test_email():
         flash(f'Тестовое письмо отправлено на {email}', 'success')
     except Exception as e:
         flash(f'Ошибка отправки: {e}', 'error')
+        
+    return redirect(url_for('admin_settings'))
+
+@app.route('/admin/settings/check-mail', methods=['POST'])
+@login_required
+def admin_check_mail():
+    try:
+        # Run in thread to not block
+        threading.Thread(target=check_incoming_mail_for_confirmations).start()
+        flash('Запущена проверка почты в фоновом режиме.', 'info')
+    except Exception as e:
+        flash(f'Ошибка запуска проверки: {e}', 'error')
         
     return redirect(url_for('admin_settings'))
 
@@ -2598,7 +2799,42 @@ def admin_option_delete(item_id):
     return redirect(url_for('admin_options'))
 
 
+def background_scheduler():
+    """Background task to check incoming mail periodically"""
+    print("Background scheduler started")
+    while True:
+        try:
+            check_incoming_mail_for_confirmations()
+        except Exception as e:
+            print(f"Scheduler error: {e}")
+        time.sleep(600)  # Check every 10 minutes
+
+# Start background scheduler if running in main process (reloader or production)
+if os.environ.get('WERKZEUG_RUN_MAIN') == 'true' or not app.debug:
+    threading.Thread(target=background_scheduler, daemon=True).start()
+
+
 if __name__ == '__main__':
     with app.app_context():
+        # Create tables if they don't exist
         db.create_all()
+        
+        # Create default admin if not exists
+        if not User.query.first():
+            print("Creating default admin user...")
+            admin = User(
+                username='admin',
+                email='admin@example.com',
+                password_hash=generate_password_hash('admin123'),
+                is_admin=True
+            )
+            db.session.add(admin)
+            
+            # Create default settings
+            settings = SiteSettings()
+            db.session.add(settings)
+            
+            db.session.commit()
+            print("Default admin created: admin / admin123")
+            
     app.run(debug=True)

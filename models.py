@@ -102,6 +102,8 @@ class Booking(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     booking_token = db.Column(db.String(64), unique=True, index=True)
     cancel_reason = db.Column(db.Text)
+    confirmation_code = db.Column(db.String(10))
+    is_email_confirmed = db.Column(db.Boolean, default=False)
     
     property = db.relationship('Property', backref=db.backref('bookings', lazy=True, cascade="all, delete-orphan"))
 
@@ -196,6 +198,13 @@ class SiteSettings(db.Model):
     smtp_username = db.Column(db.String(100))
     smtp_password = db.Column(db.String(100))
     smtp_use_tls = db.Column(db.Boolean, default=True)
+
+    # Incoming Mail settings (IMAP)
+    incoming_mail_server = db.Column(db.String(100))
+    incoming_mail_port = db.Column(db.Integer, default=993)
+    incoming_mail_login = db.Column(db.String(100))
+    incoming_mail_password = db.Column(db.String(100))
+    incoming_mail_use_ssl = db.Column(db.Boolean, default=True)
 
     # SMS settings
     sms_api_id = db.Column(db.String(100))

@@ -47,8 +47,18 @@
                     </div>
                     <div class="col-md-4">
                         <label class="form-label">Email *</label>
-                        <input type="email" name="guest_email" class="form-control" 
-                               value="{{ booking.guest_email if booking else '' }}" required>
+                        <div class="input-group">
+                            <input type="email" name="guest_email" class="form-control" 
+                                   value="{{ booking.guest_email if booking else '' }}" required>
+                            {% if booking %}
+                                <span class="input-group-text" title="{{ 'Email подтвержден' if booking.is_email_confirmed else 'Email не подтвержден' }}">
+                                    <i class="bi bi-envelope{{ '-check-fill text-success' if booking.is_email_confirmed else '-dash text-warning' }}"></i>
+                                </span>
+                            {% endif %}
+                        </div>
+                        {% if booking and booking.confirmation_code %}
+                            <div class="form-text text-primary">Код подтверждения: <strong>{{ booking.confirmation_code }}</strong></div>
+                        {% endif %}
                     </div>
                     <div class="col-md-4">
                         <label class="form-label">Телефон *</label>
@@ -125,6 +135,29 @@
             </form>
         </div>
     </div>
+
+    {% if booking %}
+    <!-- Actions -->
+    <div class="card shadow mb-4">
+        <div class="card-header py-3">
+            <h6 class="m-0 font-weight-bold text-primary">Действия</h6>
+        </div>
+        <div class="card-body">
+             <div class="row">
+                <div class="col-md-6">
+                    <form action="{{ url_for('admin_booking_send_info', booking_id=booking.id) }}" method="POST">
+                        <button type="submit" class="btn btn-info text-white">
+                            <i class="bi bi-envelope me-1"></i> Отправить информацию гостю
+                        </button>
+                        <div class="form-text mt-2">
+                            Отправит письмо со статусом и деталями бронирования на {{ booking.guest_email }}.
+                        </div>
+                    </form>
+                </div>
+             </div>
+        </div>
+    </div>
+    {% endif %}
 
     {% if booking %}
     <!-- Push Notifications & Devices -->
