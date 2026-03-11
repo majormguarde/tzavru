@@ -190,6 +190,11 @@ def check_incoming_mail_for_confirmations():
     """
     try:
         with app.app_context():
+            # Check if the database is ready by checking for a core table
+            if not db.engine.has_table('site_settings'):
+                # Silently return if table doesn't exist, as this can happen during migrations
+                return False
+
             settings = SiteSettings.query.first()
             if not settings or not settings.incoming_mail_server:
                 # print("Incoming mail settings not configured")
