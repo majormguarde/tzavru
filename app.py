@@ -2097,7 +2097,8 @@ def admin_dashboard():
                            recent_bookings=recent_bookings, 
                            pending_contacts=pending_contacts,
                            calendar_events=calendar_events,
-                           online_admins=online_admins)
+                           online_admins=online_admins,
+                           current_admin=user)
 
 @app.route('/admin/login', methods=['GET', 'POST'])
 def login():
