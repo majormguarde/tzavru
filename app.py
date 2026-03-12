@@ -75,7 +75,7 @@ app.config['SECRET_KEY'] = 'dev-secret-key-change-this-in-production'
 
 from models import db, User, UnitType, OptionType, CharacteristicType, PropertyOption, \
     PropertyCharacteristic, Property, Review, Booking, BookingDevice, BookingPasskey, \
-    BookingOption, ContactRequest, PropertyType, SiteSettings, AdminPropertyAccess, GuestJournal
+    BookingOption, ContactRequest, PropertyType, SiteSettings, AdminPropertyAccess, GuestJournal, ActivityLog
 
 # Initialize db with app
 db.init_app(app)
@@ -646,6 +646,51 @@ def superadmin_required(f):
             return redirect(url_for('admin_dashboard'))
         return f(*args, **kwargs)
     return decorated_function
+
+def log_admin_activity(user_id, action_type):
+    """Логирование действий администраторов"""
+    try:
+        activity = ActivityLog(
+            user_id=user_id,
+            action_type=action_type,
+            ip_address=request.remote_addr,
+            user_agent=request.headers.get('User-Agent', '')
+        )
+        db.session.add(activity)
+        db.session.commit()
+    except Exception as e:
+        print(f"Ошибка логирования активности: {e}")
+        db.session.rollback()
+
+def get_online_admins():
+    """Получить список администраторов онлайн (вошли в последние 15 минут)"""
+    fifteen_minutes_ago = datetime.utcnow() - timedelta(minutes=15)
+    
+    # Находим последние логины за последние 15 минут
+    recent_logins = db.session.query(
+        ActivityLog.user_id,
+        db.func.max(ActivityLog.created_at).label('last_login')
+    ).filter(
+        ActivityLog.action_type == 'login',
+        ActivityLog.created_at >= fifteen_minutes_ago
+    ).group_by(ActivityLog.user_id).subquery()
+    
+    # Находим администраторов, у которых не было выхода после последнего входа
+    online_admins = db.session.query(User).join(
+        recent_logins, User.id == recent_logins.c.user_id
+    ).filter(
+        User.is_admin == True
+    ).outerjoin(
+        ActivityLog, db.and_(
+            ActivityLog.user_id == User.id,
+            ActivityLog.action_type == 'logout',
+            ActivityLog.created_at >= recent_logins.c.last_login
+        )
+    ).filter(
+        ActivityLog.id.is_(None)  # Нет выхода после последнего входа
+    ).all()
+    
+    return online_admins
 
 def get_current_admin():
     if 'user_id' not in session:
@@ -2042,11 +2087,17 @@ def admin_dashboard():
             }
         })
     
+    # Add online admins for superadmins
+    online_admins = []
+    if user and user.is_superadmin:
+        online_admins = get_online_admins()
+    
     return render_template('admin/dashboard.html', 
                            stats=stats, 
                            recent_bookings=recent_bookings, 
                            pending_contacts=pending_contacts,
-                           calendar_events=calendar_events)
+                           calendar_events=calendar_events,
+                           online_admins=online_admins)
 
 @app.route('/admin/login', methods=['GET', 'POST'])
 def login():
@@ -2068,6 +2119,10 @@ def login():
             session['can_create_properties'] = user.can_create_properties
             session['can_edit_properties'] = user.can_edit_properties
             session['can_delete_properties'] = user.can_delete_properties
+            
+            # Логирование входа администратора
+            log_admin_activity(user.id, 'login')
+            
             flash('Вход выполнен успешно', 'success')
             return redirect(url_for('admin_dashboard'))
         
@@ -2283,6 +2338,10 @@ def admin_user_delete(user_id):
 @app.route('/admin/logout')
 @login_required
 def logout():
+    # Логирование выхода администратора
+    if 'user_id' in session:
+        log_admin_activity(session['user_id'], 'logout')
+    
     session.clear()
     return redirect(url_for('index'))
 
@@ -3116,6 +3175,20 @@ def admin_check_mail():
         flash(f'Ошибка запуска проверки: {e}', 'error')
         
     return redirect(url_for('admin_settings'))
+
+@app.route('/admin/activity-log')
+@superadmin_required
+def admin_activity_log():
+    # Получаем журнал активности администраторов
+    activities = ActivityLog.query.join(User).filter(User.is_admin == True).order_by(ActivityLog.created_at.desc()).all()
+    
+    # Получаем список онлайн администраторов
+    online_admins = get_online_admins()
+    
+    return render_template('admin/activity_log.html', 
+                         activities=activities, 
+                         online_admins=online_admins,
+                         datetime=datetime)
 
 @app.route('/admin/settings/reset-db', methods=['POST'])
 @superadmin_required

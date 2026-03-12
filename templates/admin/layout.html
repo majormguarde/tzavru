@@ -65,6 +65,12 @@
                 </a>
                 {% endif %}
                 
+                {% if current_admin and current_admin.is_superadmin %}
+                <a href="{{ url_for('admin_activity_log') }}" class="list-group-item list-group-item-action {% if 'activity_log' in request.endpoint %}active{% endif %}">
+                    <i class="bi bi-clock-history"></i> Журнал активности
+                </a>
+                {% endif %}
+                
                 <a class="list-group-item list-group-item-action" data-bs-toggle="collapse" href="#dictionariesSubmenu" role="button" aria-expanded="false" aria-controls="dictionariesSubmenu">
                     <i class="bi bi-journal-bookmark"></i> Справочники <i class="bi bi-chevron-down ms-auto" style="font-size: 0.8em;"></i>
                 </a>

@@ -247,3 +247,16 @@ class SiteSettings(db.Model):
 
     def __repr__(self):
         return f'<SiteSettings {self.site_name}>'
+
+class ActivityLog(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    action_type = db.Column(db.String(50), nullable=False)  # login, logout
+    ip_address = db.Column(db.String(45))
+    user_agent = db.Column(db.String(400))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    user = db.relationship('User', backref=db.backref('activity_logs', lazy=True))
+    
+    def __repr__(self):
+        return f'<ActivityLog {self.user_id} {self.action_type} {self.created_at}>'
