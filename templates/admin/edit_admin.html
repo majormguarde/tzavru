@@ -86,7 +86,7 @@
                                     <tr>
                                         <th style="width: 60px;">Доступ</th>
                                         <th>Объект</th>
-                                        <th style="width: 120px;">ID</th>
+                                        <th style="width: 200px;">Расположение</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -97,7 +97,7 @@
                                                    {% if p.id in existing_access_ids %}checked{% endif %}>
                                         </td>
                                         <td>{{ p.name }}</td>
-                                        <td class="text-muted">{{ p.id }}</td>
+                                        <td class="text-muted">{{ p.location }}</td>
                                     </tr>
                                     {% else %}
                                     <tr>
