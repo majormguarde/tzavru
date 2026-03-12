@@ -172,7 +172,8 @@
         <hr class="my-4">
         <div class="row">
             <div class="col-md-6">
-                <h5 class="card-title mb-3">Тестирование отправки почты</h5>
+                <h5 class="card-title mb-3">Тестирование отправки (код подтверждения)</h5>
+                <p class="text-muted small mb-3">Отправляет тестовое письмо с 6-значным кодом подтверждения.</p>
                 <form action="{{ url_for('admin_test_email') }}" method="POST" class="row g-3 align-items-end">
                     <div class="col-md-8">
                         <label class="form-label">Email получателя</label>
@@ -187,7 +188,7 @@
             </div>
             <div class="col-md-6 border-start ps-4">
                 <h5 class="card-title mb-3">Проверка входящей почты</h5>
-                <p class="text-muted small mb-3">Проверить ящик на наличие кодов подтверждения бронирований.</p>
+                <p class="text-muted small mb-3">Проверить IMAP-ящик на наличие тестовых писем с кодом подтверждения.</p>
                 <form action="{{ url_for('admin_check_mail') }}" method="POST">
                     <button type="submit" class="btn btn-outline-primary">
                         <i class="bi bi-inbox me-2"></i>Проверить почту сейчас

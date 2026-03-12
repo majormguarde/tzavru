@@ -248,14 +248,18 @@ def check_incoming_mail_for_confirmations():
                             # Get body
                             body = ""
                             if msg.is_multipart():
-                                for part in msg.walk():
-                                    if part.get_content_type() == "text/plain":
-                                        payload = part.get_payload(decode=True)
-                                        if payload:
-                                            try:
-                                                body = payload.decode(errors="replace")
-                                            except:
-                                                pass
+                                for content_type in ("text/plain", "text/html"):
+                                    for part in msg.walk():
+                                        if part.get_content_type() == content_type:
+                                            payload = part.get_payload(decode=True)
+                                            if payload:
+                                                try:
+                                                    body = payload.decode(errors="replace")
+                                                except:
+                                                    pass
+                                            if body:
+                                                break
+                                    if body:
                                         break
                             else:
                                 payload = msg.get_payload(decode=True)
@@ -292,6 +296,107 @@ def check_incoming_mail_for_confirmations():
     except Exception as e:
         print(f"Error in check_incoming_mail_for_confirmations: {e}")
         return False
+
+def check_incoming_mail_for_test_codes():
+    try:
+        with app.app_context():
+            inspector = inspect(db.engine)
+            if not inspector.has_table('site_settings'):
+                return []
+
+            settings = SiteSettings.query.first()
+            if not settings or not settings.incoming_mail_server:
+                return []
+
+            if not settings.incoming_mail_login or not settings.incoming_mail_password:
+                return []
+
+            try:
+                if settings.incoming_mail_use_ssl:
+                    mail = imaplib.IMAP4_SSL(settings.incoming_mail_server, settings.incoming_mail_port)
+                else:
+                    mail = imaplib.IMAP4(settings.incoming_mail_server, settings.incoming_mail_port)
+            except Exception as e:
+                print(f"IMAP Connection Error: {e}")
+                return []
+
+            try:
+                mail.login(settings.incoming_mail_login, settings.incoming_mail_password)
+                mail.select("inbox")
+
+                status, messages = mail.search(None, "UNSEEN")
+                if status != "OK":
+                    mail.logout()
+                    return []
+
+                email_ids = messages[0].split()
+                if not email_ids:
+                    mail.close()
+                    mail.logout()
+                    return []
+
+                found_codes = []
+                for e_id in email_ids:
+                    status, msg_data = mail.fetch(e_id, "(RFC822)")
+                    for response_part in msg_data:
+                        if not isinstance(response_part, tuple):
+                            continue
+
+                        msg = email.message_from_bytes(response_part[1])
+
+                        subject_header = decode_header(msg["Subject"])
+                        subject = ""
+                        for part, encoding in subject_header:
+                            if isinstance(part, bytes):
+                                subject += part.decode(encoding or "utf-8", errors="replace")
+                            else:
+                                subject += str(part)
+
+                        body = ""
+                        if msg.is_multipart():
+                            for content_type in ("text/plain", "text/html"):
+                                for part in msg.walk():
+                                    if part.get_content_type() == content_type:
+                                        payload = part.get_payload(decode=True)
+                                        if payload:
+                                            try:
+                                                body = payload.decode(errors="replace")
+                                            except:
+                                                pass
+                                        if body:
+                                            break
+                                if body:
+                                    break
+                        else:
+                            payload = msg.get_payload(decode=True)
+                            if payload:
+                                try:
+                                    body = payload.decode(errors="replace")
+                                except:
+                                    pass
+
+                        content = f"{subject} {body}".lower()
+                        if "тест" not in content or "код" not in content:
+                            continue
+
+                        codes = re.findall(r'\b\d{6}\b', content)
+                        if not codes:
+                            continue
+
+                        found_codes.extend(codes)
+                        mail.store(e_id, '+FLAGS', '\\Seen')
+
+                mail.close()
+                mail.logout()
+                return found_codes
+
+            except Exception as e:
+                print(f"IMAP Processing Error: {e}")
+                return []
+
+    except Exception as e:
+        print(f"Error in check_incoming_mail_for_test_codes: {e}")
+        return []
 
 def send_telegram_notification(chat_id, message):
     """
@@ -2438,6 +2543,16 @@ def admin_settings():
         settings.smtp_username = request.form.get('smtp_username', '')
         settings.smtp_password = request.form.get('smtp_password', '')
         settings.smtp_use_tls = 'smtp_use_tls' in request.form
+
+        settings.incoming_mail_server = request.form.get('incoming_mail_server', '')
+        incoming_mail_port_raw = (request.form.get('incoming_mail_port') or '').strip()
+        try:
+            settings.incoming_mail_port = int(incoming_mail_port_raw) if incoming_mail_port_raw else 993
+        except ValueError:
+            settings.incoming_mail_port = 993
+        settings.incoming_mail_login = request.form.get('incoming_mail_login', '')
+        settings.incoming_mail_password = request.form.get('incoming_mail_password', '')
+        settings.incoming_mail_use_ssl = 'incoming_mail_use_ssl' in request.form
         
         # SMS settings
         settings.sms_api_id = request.form.get('sms_api_id', '')
@@ -2490,10 +2605,16 @@ def admin_test_email():
         return redirect(url_for('admin_settings'))
     
     try:
-        # Send in background to avoid blocking
-        threading.Thread(target=send_email_notification, 
-                       args=("Тестовое письмо", "<h3>Это тестовое письмо</h3><p>Настройки SMTP работают корректно!</p>", email)).start()
-        flash(f'Тестовое письмо отправлено на {email}', 'success')
+        settings = SiteSettings.query.first()
+        code = ''.join(random.choice(string.digits) for _ in range(6))
+        subject = f"Тестовое письмо: код подтверждения {code}"
+        html_body = f"<h3>Тестовое письмо</h3><p>Код подтверждения: <b>{code}</b></p>"
+        threading.Thread(target=send_email_notification, args=(subject, html_body, email)).start()
+        sent_to = [email]
+        if settings and settings.incoming_mail_login and settings.incoming_mail_login != email:
+            threading.Thread(target=send_email_notification, args=(subject, html_body, settings.incoming_mail_login)).start()
+            sent_to.append(settings.incoming_mail_login)
+        flash(f"Тестовое письмо с кодом {code} отправлено на: {', '.join(sent_to)}", 'success')
     except Exception as e:
         flash(f'Ошибка отправки: {e}', 'error')
         
@@ -2503,9 +2624,17 @@ def admin_test_email():
 @login_required
 def admin_check_mail():
     try:
-        # Run in thread to not block
-        threading.Thread(target=check_incoming_mail_for_confirmations).start()
-        flash('Запущена проверка почты в фоновом режиме.', 'info')
+        settings = SiteSettings.query.first()
+        if (not settings or not settings.incoming_mail_server or not settings.incoming_mail_login or not settings.incoming_mail_password):
+            flash('Настройки входящей почты (IMAP) не заполнены.', 'error')
+            return redirect(url_for('admin_settings'))
+
+        codes = check_incoming_mail_for_test_codes()
+        unique_codes = sorted(set(codes))
+        if unique_codes:
+            flash(f"Найдены тестовые письма с кодами: {', '.join(unique_codes)}", 'success')
+        else:
+            flash('Тестовые письма с кодом подтверждения не найдены.', 'warning')
     except Exception as e:
         flash(f'Ошибка запуска проверки: {e}', 'error')
         
