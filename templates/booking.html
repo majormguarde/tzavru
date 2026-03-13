@@ -882,7 +882,7 @@
                         const qty = Math.max(1, Number(qtyInput.value || 1));
                         const optionTotal = pricePerUnit * qty;
                         optionsTotal += optionTotal;
-                        selectedOptionsRows += `<tr><td>${optionLabel ? optionLabel.textContent.trim() : 'Опция'}</td><td class="text-end">${qty}</td><td class="text-end">${optionTotal.toLocaleString('ru-RU')} ₽</td></tr>`;
+                        selectedOptionsRows += `<tr><td>${optionLabel ? optionLabel.textContent.trim() : 'Опция'}</td><td class="text-end">${qty} × ${pricePerUnit.toLocaleString('ru-RU')}</td><td class="text-end">${optionTotal.toLocaleString('ru-RU')} ₽</td></tr>`;
                     }
                 });
 
@@ -900,7 +900,7 @@
                             <tbody>
                                 <tr>
                                     <td>Базовое проживание</td>
-                                    <td class="text-end">${diffDays} × ${pricePerNight.toLocaleString('ru-RU')}</td>
+                                    <td class="text-end">${guestsCount} × ${diffDays} × ${pricePerNight.toLocaleString('ru-RU')}</td>
                                     <td class="text-end">${baseTotal.toLocaleString('ru-RU')} ₽</td>
                                 </tr>
                                 ${selectedOptionsRows}
