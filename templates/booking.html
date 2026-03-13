@@ -230,6 +230,41 @@
                                     </div>
                                 </div>
                                 {% endif %}
+                                {% if amenity_resources %}
+                                <div class="col-12">
+                                    <label class="form-label">Ресурсы</label>
+                                    <div class="card border-0 booking-options-panel">
+                                        <div class="card-body">
+                                            <div class="row g-2">
+                                                <div class="col-12">
+                                                    <select name="amenity_resource_id" class="form-select">
+                                                        <option value="" selected>Не выбирать</option>
+                                                        {% for res in amenity_resources %}
+                                                            <option value="{{ res.id }}">{{ res.name }}</option>
+                                                        {% endfor %}
+                                                    </select>
+                                                </div>
+                                                <div class="col-12 col-md-6">
+                                                    <input type="date" name="amenity_date" id="amenity_date" class="form-control" disabled>
+                                                </div>
+                                                <div class="col-12 col-md-6">
+                                                    <select name="amenity_time" id="amenity_time" class="form-select" disabled>
+                                                        {% for t in time_options %}
+                                                            <option value="{{ t }}">{{ t }}</option>
+                                                        {% endfor %}
+                                                    </select>
+                                                </div>
+                                                <div class="col-12 col-md-6">
+                                                    <input type="number" name="amenity_duration_minutes" id="amenity_duration_minutes" class="form-control" min="30" step="30" value="60" disabled>
+                                                </div>
+                                                <div class="col-12 col-md-6">
+                                                    <input type="text" name="amenity_notes" class="form-control" placeholder="Комментарий (необязательно)" disabled>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                {% endif %}
                                 <div class="col-12">
                                     <div id="availabilityMessage" class="alert d-none"></div>
                                 </div>
@@ -616,10 +651,51 @@
     const optionRows = document.querySelectorAll('.booking-option-row');
     const optionInputs = document.querySelectorAll('.booking-option-input');
     const optionsInlineTotalEl = document.getElementById('optionsInlineTotal');
+    const amenityResourceSelect = bookingForm.querySelector('select[name="amenity_resource_id"]');
+    const amenityDateInput = document.getElementById('amenity_date');
+    const amenityTimeSelect = document.getElementById('amenity_time');
+    const amenityDurationInput = document.getElementById('amenity_duration_minutes');
+    const amenityNotesInput = bookingForm.querySelector('input[name="amenity_notes"]');
     const hasCoordinates = propertyLatitude !== null && propertyLongitude !== null;
     const coordinatesText = hasCoordinates ? `${propertyLatitude}, ${propertyLongitude}` : 'Не указаны';
     let calculatePrice = function() {};
     const triggerRecalculate = () => window.requestAnimationFrame(() => calculatePrice());
+
+    function toISODate(dateObj) {
+        if (!dateObj) return '';
+        const y = dateObj.getFullYear();
+        const m = String(dateObj.getMonth() + 1).padStart(2, '0');
+        const d = String(dateObj.getDate()).padStart(2, '0');
+        return `${y}-${m}-${d}`;
+    }
+
+    function updateAmenityDateBounds(checkInDate, checkOutDate) {
+        if (!amenityDateInput) return;
+        if (!checkInDate || !checkOutDate || checkOutDate <= checkInDate) {
+            amenityDateInput.min = '';
+            amenityDateInput.max = '';
+            return;
+        }
+        const maxDate = new Date(checkOutDate);
+        maxDate.setDate(maxDate.getDate() - 1);
+        amenityDateInput.min = toISODate(checkInDate);
+        amenityDateInput.max = toISODate(maxDate);
+        if (amenityDateInput.value) {
+            if (amenityDateInput.value < amenityDateInput.min || amenityDateInput.value > amenityDateInput.max) {
+                amenityDateInput.value = '';
+            }
+        }
+    }
+
+    function syncAmenityState(checkInDate, checkOutDate) {
+        const hasResource = Boolean(amenityResourceSelect && amenityResourceSelect.value);
+        const hasDates = Boolean(checkInDate && checkOutDate && checkOutDate > checkInDate);
+        const enabled = hasResource && hasDates;
+        if (amenityDateInput) amenityDateInput.disabled = !enabled;
+        if (amenityTimeSelect) amenityTimeSelect.disabled = !enabled;
+        if (amenityDurationInput) amenityDurationInput.disabled = !enabled;
+        if (amenityNotesInput) amenityNotesInput.disabled = !enabled;
+    }
 
     function setOptionRowState(optionRow, isSelected) {
         optionRow.classList.toggle('option-selected', isSelected);
@@ -720,6 +796,8 @@
                     if (checkOutPicker.selectedDates.length > 0 && checkOutPicker.selectedDates[0] <= selectedDates[0]) {
                         checkOutPicker.clear();
                     }
+                    updateAmenityDateBounds(fp.selectedDates[0], checkOutPicker.selectedDates[0]);
+                    syncAmenityState(fp.selectedDates[0], checkOutPicker.selectedDates[0]);
                     calculatePrice();
                 }
             }
@@ -731,9 +809,19 @@
             dateFormat: "Y-m-d",
             disable: disableDates,
             onChange: function(selectedDates, dateStr, instance) {
+                updateAmenityDateBounds(fp.selectedDates[0], checkOutPicker.selectedDates[0]);
+                syncAmenityState(fp.selectedDates[0], checkOutPicker.selectedDates[0]);
                 calculatePrice();
             }
         });
+        if (amenityResourceSelect) {
+            amenityResourceSelect.addEventListener('change', () => {
+                updateAmenityDateBounds(fp.selectedDates[0], checkOutPicker.selectedDates[0]);
+                syncAmenityState(fp.selectedDates[0], checkOutPicker.selectedDates[0]);
+            });
+            updateAmenityDateBounds(fp.selectedDates[0], checkOutPicker.selectedDates[0]);
+            syncAmenityState(fp.selectedDates[0], checkOutPicker.selectedDates[0]);
+        }
         
         calculatePrice = function() {
             updateOptionsInlineCosts();
@@ -792,9 +880,9 @@
                     if (checkbox && qtyInput && checkbox.checked) {
                         const pricePerUnit = Number(checkbox.dataset.price || 0);
                         const qty = Math.max(1, Number(qtyInput.value || 1));
-                        const optionTotal = pricePerUnit * qty * diffDays;
+                        const optionTotal = pricePerUnit * qty;
                         optionsTotal += optionTotal;
-                        selectedOptionsRows += `<tr><td>${optionLabel ? optionLabel.textContent.trim() : 'Опция'}</td><td class="text-end">${qty} × ${diffDays}</td><td class="text-end">${optionTotal.toLocaleString('ru-RU')} ₽</td></tr>`;
+                        selectedOptionsRows += `<tr><td>${optionLabel ? optionLabel.textContent.trim() : 'Опция'}</td><td class="text-end">${qty}</td><td class="text-end">${optionTotal.toLocaleString('ru-RU')} ₽</td></tr>`;
                     }
                 });
 

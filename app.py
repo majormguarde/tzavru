@@ -1190,13 +1190,13 @@ def generate_invoice_pdf(booking):
     # Options
     if booking.selected_options:
         for option in booking.selected_options:
-            opt_total = option.price * option.quantity * days
+            opt_total = option.price * option.quantity
             unit = "шт."
             if option.option_type and option.option_type.unit_type:
                 unit = option.option_type.unit_type.short_name
             
             c.drawString(2*cm, y, f"{option.option_name}")
-            c.drawString(10*cm, y, f"{option.quantity} {unit} x {days} дн.")
+            c.drawString(10*cm, y, f"{option.quantity} {unit}")
             c.drawString(13*cm, y, f"{option.price:,.2f} руб.")
             c.drawString(16*cm, y, f"{opt_total:,.2f} руб.")
             y -= 0.6*cm
@@ -1234,14 +1234,13 @@ def send_booking_info_email(booking_id, subject, header_text):
                 # Options logic
                 selected_options_html = ''
                 if booking.selected_options:
-                    option_days = (booking.check_out - booking.check_in).days
                     options_list = []
                     for item in booking.selected_options:
                         unit = "шт."
                         if item.option_type and item.option_type.unit_type:
                             unit = item.option_type.unit_type.short_name
-                        price_total = item.price * item.quantity * option_days
-                        options_list.append(f"{item.option_name} ({item.quantity} {unit} × {option_days} ночей, +{price_total:,.0f} руб.)")
+                        price_total = item.price * item.quantity
+                        options_list.append(f"{item.option_name} ({item.quantity} {unit}, +{price_total:,.0f} руб.)")
                     selected_options_html = '<p><strong>Опции:</strong><br>' + '<br>'.join(options_list) + '</p>'
 
                 success_url = url_for('booking_success', booking_token=booking.booking_token, _external=True)
@@ -1686,6 +1685,14 @@ def captcha():
 def booking(property_id):
     property = Property.query.get_or_404(property_id)
     property_options = sorted(property.property_options, key=lambda po: po.option_type.name.lower())
+    amenity_resources = AmenityResource.query.filter(
+        AmenityResource.property_id == property_id,
+        AmenityResource.is_active == True
+    ).order_by(AmenityResource.name.asc()).all()
+    time_options = []
+    for h in range(0, 24):
+        for m in (0, 30):
+            time_options.append(f'{h:02d}:{m:02d}')
     
     # Get current user for template
     current_user_obj = None
@@ -1822,7 +1829,7 @@ def booking(property_id):
                     'price': option_price,
                     'quantity': option_qty
                 })
-                options_total += option_price * option_qty * days
+                options_total += option_price * option_qty
 
             total_price = days * guests_count * property.price_per_night + options_total
 
@@ -1860,6 +1867,84 @@ def booking(property_id):
                     quantity=selected_option['quantity']
                 ))
 
+            amenity_resource_id_raw = (request.form.get('amenity_resource_id') or '').strip()
+            if amenity_resource_id_raw:
+                try:
+                    amenity_resource_id = int(amenity_resource_id_raw)
+                    amenity_date_str = request.form.get('amenity_date', '').strip()
+                    amenity_time_str = request.form.get('amenity_time', '').strip()
+                    amenity_duration_minutes = int(request.form.get('amenity_duration_minutes', '0'))
+                    amenity_notes = (request.form.get('amenity_notes') or '').strip()
+                except Exception:
+                    msg = 'Некорректные данные дополнительной услуги.'
+                    if is_ajax: return jsonify({'status': 'error', 'message': msg})
+                    flash(msg, 'error')
+                    return redirect(url_for('booking', property_id=property_id))
+
+                resource = AmenityResource.query.get_or_404(amenity_resource_id)
+                if not resource.is_active or resource.property_id != property_id:
+                    msg = 'Ресурс недоступен для выбранного объекта.'
+                    if is_ajax: return jsonify({'status': 'error', 'message': msg})
+                    flash(msg, 'error')
+                    return redirect(url_for('booking', property_id=property_id))
+
+                if amenity_duration_minutes <= 0 or amenity_duration_minutes % resource.slot_minutes != 0:
+                    msg = 'Длительность услуги должна быть кратна шагу слота.'
+                    if is_ajax: return jsonify({'status': 'error', 'message': msg})
+                    flash(msg, 'error')
+                    return redirect(url_for('booking', property_id=property_id))
+
+                try:
+                    start_dt = datetime.strptime(f'{amenity_date_str} {amenity_time_str}', '%Y-%m-%d %H:%M')
+                except Exception:
+                    msg = 'Некорректные дата/время услуги.'
+                    if is_ajax: return jsonify({'status': 'error', 'message': msg})
+                    flash(msg, 'error')
+                    return redirect(url_for('booking', property_id=property_id))
+
+                end_dt = start_dt + timedelta(minutes=amenity_duration_minutes)
+
+                if start_dt.date() < check_in or start_dt.date() >= check_out:
+                    msg = 'Время услуги должно быть в период проживания.'
+                    if is_ajax: return jsonify({'status': 'error', 'message': msg})
+                    flash(msg, 'error')
+                    return redirect(url_for('booking', property_id=property_id))
+
+                if end_dt.date() >= check_out:
+                    msg = 'Время услуги должно быть в период проживания.'
+                    if is_ajax: return jsonify({'status': 'error', 'message': msg})
+                    flash(msg, 'error')
+                    return redirect(url_for('booking', property_id=property_id))
+
+                if start_dt.time() < resource.open_time or end_dt.time() > resource.close_time:
+                    msg = 'Выбранное время выходит за часы работы ресурса.'
+                    if is_ajax: return jsonify({'status': 'error', 'message': msg})
+                    flash(msg, 'error')
+                    return redirect(url_for('booking', property_id=property_id))
+
+                if start_dt.minute % resource.slot_minutes != 0:
+                    msg = 'Время начала должно совпадать с шагом слота.'
+                    if is_ajax: return jsonify({'status': 'error', 'message': msg})
+                    flash(msg, 'error')
+                    return redirect(url_for('booking', property_id=property_id))
+
+                conflict = _find_amenity_conflict(resource, start_dt, end_dt, statuses=['requested', 'approved', 'completed'])
+                if conflict:
+                    msg = 'Выбранное время уже занято (с учетом техперерыва).'
+                    if is_ajax: return jsonify({'status': 'error', 'message': msg})
+                    flash(msg, 'error')
+                    return redirect(url_for('booking', property_id=property_id))
+
+                db.session.add(AmenityReservation(
+                    resource_id=resource.id,
+                    booking_id=booking.id,
+                    start_dt=start_dt,
+                    end_dt=end_dt,
+                    status='requested',
+                    price_total=0.0,
+                    notes=amenity_notes
+                ))
+
             db.session.commit()
             
             # Send booking confirmation email with clickable link
@@ -1891,21 +1976,15 @@ def booking(property_id):
             try:
                 selected_options_html = ''
                 if booking.selected_options:
-                    option_days = (booking.check_out - booking.check_in).days
-                    
                     options_list = []
                     for item in booking.selected_options:
                         unit = "шт."
                         if item.option_type and item.option_type.unit_type:
                             unit = item.option_type.unit_type.short_name
-                        
-                        price_total = item.price * item.quantity * option_days
-                        options_list.append(f"{item.option_name} ({item.quantity} {unit} × {option_days} ночей, +{price_total:,.0f} руб.)")
+                        price_total = item.price * item.quantity
+                        options_list.append(f"{item.option_name} ({item.quantity} {unit}, +{price_total:,.0f} руб.)")
                         
                     selected_options_html = '<p><strong>Опции:</strong><br>' + '<br>'.join(options_list) + '</p>'
-
-                success_url = url_for('booking_success', booking_token=booking.booking_token, _external=True)
-                
                 check_in_formatted = format_date_ru(booking.check_in)
                 check_out_formatted = format_date_ru(booking.check_out)
                 
@@ -1992,16 +2071,13 @@ def booking(property_id):
                 try:
                     selected_options_tg = ''
                     if booking.selected_options:
-                        option_days = (booking.check_out - booking.check_in).days
-                        
                         tg_options_list = []
                         for item in booking.selected_options:
                             unit = "шт."
                             if item.option_type and item.option_type.unit_type:
                                 unit = item.option_type.unit_type.short_name
-                            
-                            price_total = item.price * item.quantity * option_days
-                            tg_options_list.append(f"{item.option_name} ({item.quantity} {unit} × {option_days}, +{price_total:,.0f} руб.)")
+                            price_total = item.price * item.quantity
+                            tg_options_list.append(f"{item.option_name} ({item.quantity} {unit}, +{price_total:,.0f} руб.)")
                             
                         selected_options_tg = '\n🧩 <b>Опции:</b> ' + ', '.join(tg_options_list)
 
@@ -2045,7 +2121,7 @@ def booking(property_id):
             flash(msg, 'error')
             return redirect(url_for('booking', property_id=property_id))
             
-    return render_template('booking.html', property=property, captcha_question=captcha_question, property_options=property_options, current_user_obj=current_user_obj)
+    return render_template('booking.html', property=property, captcha_question=captcha_question, property_options=property_options, current_user_obj=current_user_obj, amenity_resources=amenity_resources, time_options=time_options)
 
 @app.route('/booking/success/<booking_token>', endpoint='booking_success')
 def booking_success(booking_token):
@@ -2126,12 +2202,27 @@ def my_bookings():
         for r in reservations:
             reservations_by_booking.setdefault(r.booking_id, []).append(r)
 
+    booking_date_bounds = {}
+    for b in user_bookings:
+        max_date = b.check_out - timedelta(days=1)
+        booking_date_bounds[b.id] = {
+            'min': b.check_in.strftime('%Y-%m-%d'),
+            'max': max_date.strftime('%Y-%m-%d')
+        }
+
+    time_options = []
+    for h in range(0, 24):
+        for m in (0, 30):
+            time_options.append(f'{h:02d}:{m:02d}')
+
     return render_template('my_bookings.html',
                          pending_bookings=pending_bookings,
                          confirmed_bookings=confirmed_bookings,
                          cancelled_bookings=cancelled_bookings,
                          resources_by_property=resources_by_property,
-                         reservations_by_booking=reservations_by_booking)
+                         reservations_by_booking=reservations_by_booking,
+                         booking_date_bounds=booking_date_bounds,
+                         time_options=time_options)
 
 def _find_amenity_conflict(resource, start_dt, end_dt, exclude_reservation_id=None, statuses=None):
     statuses = statuses or ['requested', 'approved', 'completed']

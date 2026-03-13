@@ -132,10 +132,15 @@
                                                                     </select>
                                                                 </div>
                                                                 <div class="col-6">
-                                                                    <input type="date" name="date" class="form-control form-control-sm" required>
+                                                                    {% set bounds = booking_date_bounds.get(booking.id) %}
+                                                                    <input type="date" name="date" class="form-control form-control-sm" required {% if bounds %}min="{{ bounds['min'] }}" max="{{ bounds['max'] }}"{% endif %}>
                                                                 </div>
                                                                 <div class="col-6">
-                                                                    <input type="time" name="time" class="form-control form-control-sm" required>
+                                                                    <select name="time" class="form-select form-select-sm" required>
+                                                                        {% for t in time_options %}
+                                                                            <option value="{{ t }}">{{ t }}</option>
+                                                                        {% endfor %}
+                                                                    </select>
                                                                 </div>
                                                                 <div class="col-6">
                                                                     <input type="number" name="duration_minutes" class="form-control form-control-sm" min="30" step="30" value="60" required>
@@ -259,10 +264,15 @@
                                                                     </select>
                                                                 </div>
                                                                 <div class="col-6">
-                                                                    <input type="date" name="date" class="form-control form-control-sm" required>
+                                                                    {% set bounds = booking_date_bounds.get(booking.id) %}
+                                                                    <input type="date" name="date" class="form-control form-control-sm" required {% if bounds %}min="{{ bounds['min'] }}" max="{{ bounds['max'] }}"{% endif %}>
                                                                 </div>
                                                                 <div class="col-6">
-                                                                    <input type="time" name="time" class="form-control form-control-sm" required>
+                                                                    <select name="time" class="form-select form-select-sm" required>
+                                                                        {% for t in time_options %}
+                                                                            <option value="{{ t }}">{{ t }}</option>
+                                                                        {% endfor %}
+                                                                    </select>
                                                                 </div>
                                                                 <div class="col-6">
                                                                     <input type="number" name="duration_minutes" class="form-control form-control-sm" min="30" step="30" value="60" required>
