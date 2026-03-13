@@ -34,8 +34,8 @@
                         </select>
                     </div>
                     <div class="col-md-2">
-                        <label class="form-label">Слот, мин</label>
-                        <input type="number" name="slot_minutes" class="form-control" min="10" step="10" value="30">
+                        <label class="form-label">Слот, ч</label>
+                        <input type="number" name="slot_hours" class="form-control" min="0.5" step="0.5" value="0.5">
                     </div>
                     <div class="col-md-2">
                         <label class="form-label">Пауза до, мин</label>
@@ -101,7 +101,13 @@
                                 <td>{{ r.property.name }}</td>
                                 <td><strong>{{ r.name }}</strong></td>
                                 <td>{{ r.resource_type_obj.name if r.resource_type_obj else r.resource_type }}</td>
-                                <td>{{ r.slot_minutes }} мин</td>
+                                <td>
+                                    {% if r.slot_minutes % 60 == 0 %}
+                                        {{ r.slot_minutes // 60 }} ч
+                                    {% else %}
+                                        {{ (r.slot_minutes / 60)|round(2) }} ч
+                                    {% endif %}
+                                </td>
                                 <td>{{ r.buffer_before_minutes }} / {{ r.buffer_after_minutes }} мин</td>
                                 <td>{{ r.open_time.strftime('%H:%M') }}–{{ r.close_time.strftime('%H:%M') }}</td>
                                 <td>
@@ -153,8 +159,13 @@
                                                         </select>
                                                     </div>
                                                     <div class="col-md-3">
-                                                        <label class="form-label">Слот, мин</label>
-                                                        <input type="number" name="slot_minutes" class="form-control" min="10" step="10" value="{{ r.slot_minutes }}">
+                                                        <label class="form-label">Слот, ч</label>
+                                                        {% if r.slot_minutes % 60 == 0 %}
+                                                            {% set slot_hours_value = r.slot_minutes // 60 %}
+                                                        {% else %}
+                                                            {% set slot_hours_value = (r.slot_minutes / 60)|round(2) %}
+                                                        {% endif %}
+                                                        <input type="number" name="slot_hours" class="form-control" min="0.5" step="0.5" value="{{ slot_hours_value }}">
                                                     </div>
                                                     <div class="col-md-3">
                                                         <label class="form-label">Пауза до, мин</label>

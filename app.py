@@ -3861,6 +3861,10 @@ def admin_amenity_resource_add():
         close_time_val = datetime.strptime(request.form.get('close_time', '23:00'), '%H:%M').time()
         resource_type_id = int(request.form['resource_type_id'])
         resource_type_obj = AmenityResourceType.query.get_or_404(resource_type_id)
+        slot_hours_raw = (request.form.get('slot_hours', '0.5') or '0.5').strip().replace(',', '.')
+        slot_minutes = int(round(float(slot_hours_raw) * 60))
+        if slot_minutes <= 0:
+            raise ValueError('slot_minutes must be > 0')
 
         resource = AmenityResource(
             property_id=property_id,
@@ -3868,7 +3872,7 @@ def admin_amenity_resource_add():
             resource_type=resource_type_obj.name,
             resource_type_id=resource_type_obj.id,
             is_active=bool(request.form.get('is_active')),
-            slot_minutes=int(request.form.get('slot_minutes', 30)),
+            slot_minutes=slot_minutes,
             buffer_before_minutes=int(request.form.get('buffer_before_minutes', 0)),
             buffer_after_minutes=int(request.form.get('buffer_after_minutes', 0)),
             open_time=open_time_val,
@@ -3896,11 +3900,15 @@ def admin_amenity_resource_edit(resource_id):
         close_time_val = datetime.strptime(request.form.get('close_time', '23:00'), '%H:%M').time()
         resource_type_id = int(request.form['resource_type_id'])
         resource_type_obj = AmenityResourceType.query.get_or_404(resource_type_id)
+        slot_hours_raw = (request.form.get('slot_hours', '0.5') or '0.5').strip().replace(',', '.')
+        slot_minutes = int(round(float(slot_hours_raw) * 60))
+        if slot_minutes <= 0:
+            raise ValueError('slot_minutes must be > 0')
         resource.name = request.form['name'].strip()
         resource.resource_type = resource_type_obj.name
         resource.resource_type_id = resource_type_obj.id
         resource.is_active = bool(request.form.get('is_active'))
-        resource.slot_minutes = int(request.form.get('slot_minutes', 30))
+        resource.slot_minutes = slot_minutes
         resource.buffer_before_minutes = int(request.form.get('buffer_before_minutes', 0))
         resource.buffer_after_minutes = int(request.form.get('buffer_after_minutes', 0))
         resource.open_time = open_time_val
