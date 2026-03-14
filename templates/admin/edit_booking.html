@@ -488,13 +488,62 @@
 {% block extra_js %}
 <script>
 (function() {
+    var amenityMeta = {
+        {% for res in amenity_resources %}
+            "{{ res.id }}": {
+                price: {{ (res.price or 0) }},
+                unit: {{ (((res.unit_type.short_name ~ ' ' ~ res.unit_type.name) if res.unit_type else '')|tojson }}
+            },
+        {% endfor %}
+    };
+
     var resourceSelect = document.getElementById('amenity_resource_id');
     var dateInput = document.getElementById('amenity_date');
     var timeSelect = document.getElementById('amenity_time');
     var durationInput = document.getElementById('amenity_duration_hours');
     var constraintsEl = document.getElementById('amenity_constraints');
+    var addForm = document.getElementById('amenityAddForm');
+    var addPriceInput = addForm ? addForm.querySelector('input[name="price_total"]') : null;
 
     if (!resourceSelect || !timeSelect || !durationInput) return;
+
+    function round2(value) {
+        var v = Number(value);
+        if (!Number.isFinite(v)) return null;
+        return Math.round(v * 100) / 100;
+    }
+
+    function calcAmenityPrice(resourceId, durationHours) {
+        var meta = amenityMeta[String(resourceId)];
+        if (!meta) return null;
+        var price = Number(meta.price || 0);
+        if (!Number.isFinite(price) || price <= 0) return 0;
+
+        var hours = Number(durationHours || 0);
+        if (!Number.isFinite(hours) || hours <= 0) hours = 0;
+
+        var unit = String(meta.unit || '').toLowerCase();
+        var total = price;
+        if (unit.indexOf('мин') !== -1) {
+            total = price * (hours * 60);
+        } else if (unit.indexOf('час') !== -1 || unit.indexOf('ч') !== -1 || unit.indexOf('hour') !== -1 || unit.indexOf('hours') !== -1 || unit.indexOf(' h') !== -1 || unit === 'h' || unit === 'hr') {
+            total = price * hours;
+        }
+        return round2(total);
+    }
+
+    function setInputMoneyValue(input, value) {
+        if (!input) return;
+        if (value === null || value === undefined) return;
+        input.value = String(value.toFixed(2));
+    }
+
+    function applyAutoPriceAddForm() {
+        if (!addPriceInput) return;
+        var v = calcAmenityPrice(resourceSelect.value, durationInput.value);
+        if (v === null) return;
+        setInputMoneyValue(addPriceInput, v);
+    }
 
     function parseHHMM(value) {
         if (!value) return null;
@@ -591,15 +640,49 @@
         setConstraintsText(open, close, slotMinutes, note);
     }
 
-    resourceSelect.addEventListener('change', applyResourceConstraints);
-    durationInput.addEventListener('change', applyResourceConstraints);
+    resourceSelect.addEventListener('change', function() {
+        applyResourceConstraints();
+        applyAutoPriceAddForm();
+    });
+    durationInput.addEventListener('change', function() {
+        applyResourceConstraints();
+        applyAutoPriceAddForm();
+    });
     durationInput.addEventListener('input', function() {
         if (durationInput.value) applyResourceConstraints();
+        applyAutoPriceAddForm();
     });
 
     if (dateInput && !dateInput.value) {
         dateInput.value = dateInput.min || '';
     }
+
+    function applyAutoPriceRow(tr) {
+        if (!tr) return;
+        var resSel = tr.querySelector('[data-field="resource_id"]');
+        var durInp = tr.querySelector('[data-field="duration_hours"]');
+        var priceInp = tr.querySelector('[data-field="price_total"]');
+        if (!resSel || !durInp || !priceInp) return;
+        var v = calcAmenityPrice(resSel.value, durInp.value);
+        if (v === null) return;
+        setInputMoneyValue(priceInp, v);
+    }
+
+    document.addEventListener('input', function(e) {
+        var el = e.target;
+        if (!el || !(el instanceof HTMLElement)) return;
+        if (el.getAttribute('data-field') === 'duration_hours') {
+            applyAutoPriceRow(el.closest('tr'));
+        }
+    }, true);
+
+    document.addEventListener('change', function(e) {
+        var el = e.target;
+        if (!el || !(el instanceof HTMLElement)) return;
+        if (el.getAttribute('data-field') === 'resource_id') {
+            applyAutoPriceRow(el.closest('tr'));
+        }
+    }, true);
 
     document.addEventListener('submit', function(e) {
         var form = e.target;
