@@ -134,6 +134,10 @@
                     if (printBtn) {
                         printBtn.addEventListener('click', function() {
                             var data = bookingData;
+                            var stayTotal = Number(data.baseTotal || 0);
+                            var optionsTotal = Number(data.optionsTotal || 0);
+                            var resourcesTotal = Number(data.resourcesTotal || 0);
+                            var totalPrice = Number(data.totalPrice || 0);
                             var optionsRows = data.options.length
                                 ? data.options.map(function(item) { return `<tr><td>${item.name}</td><td>${item.qty}</td><td>${Number(item.pricePerUnit).toLocaleString('ru-RU')} ₽</td><td>${Number(item.lineTotal).toLocaleString('ru-RU')} ₽</td></tr>`; }).join('')
                                 : '<tr><td colspan="4" style="text-align:center;color:#666;">Опции не выбраны</td></tr>';
@@ -160,6 +164,11 @@
                                         th { background: #f3f3f3; }
                                         .total { margin-top: 12px; text-align: right; font-size: 16px; font-weight: 700; }
                                         .section-title { margin-top: 16px; font-weight: 700; }
+                                        .summary { border: 1px solid #ddd; border-radius: 8px; padding: 12px; margin: 12px 0 6px; }
+                                        .summary-row { display: flex; justify-content: space-between; gap: 16px; padding: 6px 0; border-bottom: 1px solid #eee; }
+                                        .summary-row:last-child { border-bottom: 0; }
+                                        .summary-row .value { white-space: nowrap; }
+                                        .summary-row.stay { font-size: 16px; }
                                     </style>
                                 </head>
                                 <body>
@@ -171,6 +180,25 @@
                                         <div><span class="label">Гости:</span> ${data.guestsCount}</div>
                                         <div><span class="label">Гость:</span> ${data.guestName} (${data.guestPhone}, ${data.guestEmail})</div>
                                         ${data.createdAt ? `<div><span class="label">Создано:</span> ${data.createdAt}</div>` : ``}
+                                    </div>
+
+                                    <div class="summary">
+                                        <div class="summary-row stay">
+                                            <div class="label">Проживание</div>
+                                            <div class="value"><strong>${stayTotal.toLocaleString('ru-RU')} ₽</strong></div>
+                                        </div>
+                                        <div class="summary-row">
+                                            <div>Опции</div>
+                                            <div class="value">${optionsTotal.toLocaleString('ru-RU')} ₽</div>
+                                        </div>
+                                        <div class="summary-row">
+                                            <div>Ресурсы</div>
+                                            <div class="value">${resourcesTotal.toLocaleString('ru-RU')} ₽</div>
+                                        </div>
+                                        <div class="summary-row">
+                                            <div class="label">Итого</div>
+                                            <div class="value"><strong>${totalPrice.toLocaleString('ru-RU')} ₽</strong></div>
+                                        </div>
                                     </div>
 
                                     <div class="section-title">Опции</div>
@@ -185,7 +213,7 @@
                                         <tbody>${resourcesRows}</tbody>
                                     </table>
 
-                                    <div class="total">Итого: ${Number(data.totalPrice).toLocaleString('ru-RU')} ₽</div>
+                                    <div class="total">Итого: ${totalPrice.toLocaleString('ru-RU')} ₽</div>
                                     <script>
                                         window.onload = function() { window.focus(); window.print(); };
                                     <\/script>
