@@ -27,10 +27,44 @@
                     <div id="copy-status" class="small text-muted mt-2"></div>
                 </div>
 
+                {% set nights = (single_booking.check_out - single_booking.check_in).days %}
+                {% set base_total = (single_booking.property.price_per_night or 0) * nights * (single_booking.guests_count or 0) %}
+                {% set ns = namespace(options_total=0, resources_total=0) %}
+                {% for item in single_booking.selected_options %}
+                    {% set ns.options_total = ns.options_total + (item.price * item.quantity) %}
+                {% endfor %}
+                {% set amenity_reservations = reservations_by_booking.get(single_booking.id, []) %}
+                {% for r in amenity_reservations %}
+                    {% if r.status != 'cancelled' %}
+                        {% set ns.resources_total = ns.resources_total + (r.price_total or 0) %}
+                    {% endif %}
+                {% endfor %}
+                {% set total_calc = base_total + ns.options_total + ns.resources_total %}
+
+                <div class="card border-0 shadow-sm mb-4">
+                    <div class="card-body p-4">
+                        <div class="d-flex flex-wrap justify-content-between align-items-start gap-3">
+                            <div>
+                                <div class="fw-semibold">Заказ #{{ single_booking.id }}</div>
+                                <div class="text-muted small">
+                                    {{ single_booking.property.name }} · {{ single_booking.check_in.strftime('%d.%m.%Y') }} – {{ single_booking.check_out.strftime('%d.%m.%Y') }} · гостей: {{ single_booking.guests_count }}
+                                </div>
+                                <div class="mt-2">
+                                    <span class="fw-semibold">Итого:</span> {{ total_calc|format_price }} ₽
+                                </div>
+                            </div>
+                            <div class="text-end">
+                                <button id="btn-print" class="btn btn-outline-secondary" type="button">Распечатать заказ</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <script>
                 (function() {
                     var copyBtn = document.getElementById('btn-copy-link');
                     var copyStatus = document.getElementById('copy-status');
+                    var printBtn = document.getElementById('btn-print');
 
                     function setStatus(el, msg, isError) {
                         if (!el) return;
@@ -38,6 +72,38 @@
                         el.classList.toggle('text-danger', !!isError);
                         el.classList.toggle('text-muted', !isError);
                     }
+
+                    var bookingData = {
+                        bookingId: {{ single_booking.id }},
+                        propertyName: {{ single_booking.property.name|tojson }},
+                        propertyLocation: {{ single_booking.property.location|tojson }},
+                        checkIn: "{{ single_booking.check_in.strftime('%d.%m.%Y') }}",
+                        checkOut: "{{ single_booking.check_out.strftime('%d.%m.%Y') }}",
+                        guestName: {{ single_booking.guest_name|tojson }},
+                        guestPhone: {{ single_booking.guest_phone|tojson }},
+                        guestEmail: {{ single_booking.guest_email|tojson }},
+                        guestsCount: {{ single_booking.guests_count }},
+                        createdAt: "{{ single_booking.created_at.strftime('%d.%m.%Y %H:%M') if single_booking.created_at else '' }}",
+                        options: [
+                            {% for item in single_booking.selected_options %}
+                            { name: {{ item.option_name|tojson }}, qty: {{ item.quantity }}, pricePerUnit: {{ item.price }}, lineTotal: {{ item.price * item.quantity }} },
+                            {% endfor %}
+                        ],
+                        resources: [
+                            {% for ar in amenity_reservations if ar.status != 'cancelled' %}
+                            {
+                                name: {{ (ar.resource.name if ar.resource else 'Ресурс')|tojson }},
+                                start: {{ (ar.start_dt.strftime('%d.%m.%Y %H:%M') if ar.start_dt else '')|tojson }},
+                                end: {{ (ar.end_dt.strftime('%d.%m.%Y %H:%M') if ar.end_dt else '')|tojson }},
+                                priceTotal: {{ (ar.price_total or 0) }}
+                            },
+                            {% endfor %}
+                        ],
+                        baseTotal: {{ base_total }},
+                        optionsTotal: {{ ns.options_total }},
+                        resourcesTotal: {{ ns.resources_total }},
+                        totalPrice: {{ total_calc }}
+                    };
 
                     async function copyText(text) {
                         if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -63,6 +129,73 @@
                             } catch (e) {
                                 setStatus(copyStatus, 'Не удалось скопировать ссылку.', true);
                             }
+                        });
+                    }
+
+                    if (printBtn) {
+                        printBtn.addEventListener('click', function() {
+                            var data = bookingData;
+                            var optionsRows = data.options.length
+                                ? data.options.map(function(item) { return `<tr><td>${item.name}</td><td>${item.qty}</td><td>${Number(item.pricePerUnit).toLocaleString('ru-RU')} ₽</td><td>${Number(item.lineTotal).toLocaleString('ru-RU')} ₽</td></tr>`; }).join('')
+                                : '<tr><td colspan="4" style="text-align:center;color:#666;">Опции не выбраны</td></tr>';
+                            var resourcesRows = data.resources.length
+                                ? data.resources.map(function(item) { return `<tr><td>${item.name}</td><td>${item.start} – ${item.end}</td><td style="text-align:right;">${Number(item.priceTotal).toLocaleString('ru-RU')} ₽</td></tr>`; }).join('')
+                                : '<tr><td colspan="3" style="text-align:center;color:#666;">Ресурсы не выбраны</td></tr>';
+
+                            var w = window.open('', '_blank', 'width=980,height=760');
+                            if (!w) return;
+
+                            var html = `
+                                <!doctype html>
+                                <html lang="ru">
+                                <head>
+                                    <meta charset="utf-8">
+                                    <title>Заказ #${data.bookingId}</title>
+                                    <style>
+                                        body { font-family: Arial, sans-serif; margin: 20px; color: #222; }
+                                        h1 { margin: 0 0 12px; font-size: 24px; }
+                                        .meta { margin-bottom: 14px; line-height: 1.45; }
+                                        .label { font-weight: 700; }
+                                        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+                                        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; font-size: 14px; }
+                                        th { background: #f3f3f3; }
+                                        .total { margin-top: 12px; text-align: right; font-size: 16px; font-weight: 700; }
+                                        .section-title { margin-top: 16px; font-weight: 700; }
+                                    </style>
+                                </head>
+                                <body>
+                                    <h1>Заказ #${data.bookingId}</h1>
+                                    <div class="meta">
+                                        <div><span class="label">Объект:</span> ${data.propertyName}</div>
+                                        <div><span class="label">Адрес:</span> ${data.propertyLocation}</div>
+                                        <div><span class="label">Даты:</span> ${data.checkIn} – ${data.checkOut}</div>
+                                        <div><span class="label">Гости:</span> ${data.guestsCount}</div>
+                                        <div><span class="label">Гость:</span> ${data.guestName} (${data.guestPhone}, ${data.guestEmail})</div>
+                                        ${data.createdAt ? `<div><span class="label">Создано:</span> ${data.createdAt}</div>` : ``}
+                                    </div>
+
+                                    <div class="section-title">Опции</div>
+                                    <table>
+                                        <thead><tr><th>Название</th><th>Кол-во</th><th>Цена</th><th>Сумма</th></tr></thead>
+                                        <tbody>${optionsRows}</tbody>
+                                    </table>
+
+                                    <div class="section-title">Ресурсы</div>
+                                    <table>
+                                        <thead><tr><th>Название</th><th>Период</th><th style="text-align:right;">Сумма</th></tr></thead>
+                                        <tbody>${resourcesRows}</tbody>
+                                    </table>
+
+                                    <div class="total">Итого: ${Number(data.totalPrice).toLocaleString('ru-RU')} ₽</div>
+                                    <script>
+                                        window.onload = function() { window.focus(); window.print(); };
+                                    <\/script>
+                                </body>
+                                </html>
+                            `;
+                            w.document.open();
+                            w.document.write(html);
+                            w.document.close();
                         });
                     }
                 })();
@@ -148,7 +281,7 @@
                                                             {% endif %}
                                                         {% endfor %}
                                                         {% set total_calc = base_total + ns.options_total + ns.resources_total %}
-                                                        <div class="fw-bold">{{ booking.total_price|format_price }} ₽</div>
+                                                        <div class="fw-bold">{{ total_calc|format_price }} ₽</div>
                                                         <div class="small text-muted">Проживание {{ base_total|format_price }} ₽ · Опции {{ ns.options_total|format_price }} ₽ · Ресурсы {{ ns.resources_total|format_price }} ₽</div>
                                                     </div>
                                                 </div>
@@ -296,7 +429,7 @@
                                                             {% endif %}
                                                         {% endfor %}
                                                         {% set total_calc = base_total + ns.options_total + ns.resources_total %}
-                                                        <div class="fw-bold">{{ booking.total_price|format_price }} ₽</div>
+                                                        <div class="fw-bold">{{ total_calc|format_price }} ₽</div>
                                                         <div class="small text-muted">Проживание {{ base_total|format_price }} ₽ · Опции {{ ns.options_total|format_price }} ₽ · Ресурсы {{ ns.resources_total|format_price }} ₽</div>
                                                     </div>
                                                 </div>
