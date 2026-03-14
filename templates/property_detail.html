@@ -49,7 +49,7 @@
     <!-- Hero -->
     <div class="property-hero" style="position: relative; overflow: hidden;">
         <!-- Breadcrumbs at the top of Hero -->
-        <div class="position-fixed top-0 w-100" style="z-index: 1050; padding-top: 80px; padding-left: 0; pointer-events: none;">
+        <div class="property-breadcrumbs w-100">
             <div class="container">
                 <nav aria-label="breadcrumb" style="pointer-events: auto;">
                     <ol class="breadcrumb mb-0 py-2 px-3 rounded-3" style="background-color: rgba(0,0,0,0.5); display: inline-flex;">
@@ -152,6 +152,12 @@
             width: 100%;
             height: 100%;
             object-fit: cover;
+        }
+        @media (max-width: 768px) {
+            .gallery-thumb-wrapper {
+                width: 78px;
+                height: 54px;
+            }
         }
     </style>
 

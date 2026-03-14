@@ -87,6 +87,7 @@ body {
 /* ==================== HERO SECTION ==================== */
 .hero-section {
     height: 100vh;
+    min-height: 100svh;
     background-size: cover;
     background-position: center;
     background-attachment: fixed;
@@ -493,11 +494,33 @@ body {
 }
 
 /* ==================== PROPERTY DETAIL ==================== */
+.property-detail-page {
+    padding-bottom: 120px;
+}
+
+.booking-page {
+    padding-bottom: 120px;
+}
+
 .property-hero {
     height: 60vh;
     background-size: cover;
     background-position: center;
     position: relative;
+}
+
+.property-breadcrumbs {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 4;
+    padding-top: 80px;
+    pointer-events: none;
+}
+
+.property-breadcrumbs nav {
+    pointer-events: auto;
 }
 
 .property-hero .hero-overlay {
@@ -684,6 +707,11 @@ body {
 
 /* ==================== RESPONSIVE ==================== */
 @media (max-width: 768px) {
+    .hero-section {
+        height: 100svh;
+        background-attachment: scroll;
+    }
+
     .hero-title {
         font-size: 3rem;
     }
@@ -699,6 +727,42 @@ body {
     
     .section-title {
         font-size: 2rem;
+    }
+
+    .property-hero {
+        height: 50vh;
+    }
+
+    .property-hero h1.display-4 {
+        font-size: 2rem;
+    }
+
+    .property-hero p.lead {
+        font-size: 1rem;
+    }
+
+    .info-card {
+        padding: 1rem;
+    }
+
+    .gallery-thumb-wrapper {
+        width: 78px;
+        height: 54px;
+    }
+
+    #map-container {
+        height: 320px !important;
+    }
+
+    #modal-map-container {
+        height: 320px !important;
+    }
+}
+
+@media (max-width: 991.98px) {
+    #mainNav .navbar-collapse .btn {
+        width: 100%;
+        margin-top: 0.75rem;
     }
 }
 

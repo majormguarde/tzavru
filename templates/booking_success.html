@@ -3,23 +3,17 @@
 {% block title %}{% if booking.status == 'pending' %}Заявка создана{% else %}Бронирование создано{% endif %}{% endblock %}
 
 {% block content %}
-    <!-- Breadcrumbs -->
-    <div class="position-fixed top-0 w-100" style="z-index: 1050; padding-top: 80px; padding-left: 0; pointer-events: none;">
-        <div class="container">
-            <nav aria-label="breadcrumb" style="pointer-events: auto;">
-                <ol class="breadcrumb mb-0 py-2 px-3 rounded-3" style="background-color: rgba(0,0,0,0.5); display: inline-flex;">
-                    <li class="breadcrumb-item"><a href="{{ url_for('index') }}" class="text-white text-decoration-none opacity-75 hover-opacity-100">Главная</a></li>
-                    <li class="breadcrumb-item"><a href="{{ url_for('property_detail', id=booking.property.id) }}" class="text-white text-decoration-none opacity-75 hover-opacity-100">{{ booking.property.name }}</a></li>
-                    <li class="breadcrumb-item active text-white" aria-current="page">
-                        {% if booking.status == 'pending' %}Заявка{% else %}Бронирование{% endif %}
-                    </li>
-                </ol>
-            </nav>
-        </div>
-    </div>
-
-<section class="py-5" style="margin-top: 80px;">
+<section class="py-5">
     <div class="container">
+        <nav aria-label="breadcrumb" class="mb-4">
+            <ol class="breadcrumb mb-0">
+                <li class="breadcrumb-item"><a href="{{ url_for('index') }}">Главная</a></li>
+                <li class="breadcrumb-item"><a href="{{ url_for('property_detail', id=booking.property.id) }}">{{ booking.property.name }}</a></li>
+                <li class="breadcrumb-item active" aria-current="page">
+                    {% if booking.status == 'pending' %}Заявка{% else %}Бронирование{% endif %}
+                </li>
+            </ol>
+        </nav>
         <div class="row justify-content-center">
             <div class="col-12 col-lg-8">
                 <div class="card bg-dark border-secondary mb-4">

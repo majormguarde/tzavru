@@ -95,25 +95,47 @@
         padding: 0.55rem 0.75rem;
         font-size: 0.9rem;
     }
+    .booking-page {
+        padding-bottom: 180px;
+    }
+    @media (min-width: 768px) {
+        .booking-page {
+            padding-bottom: 140px;
+        }
+    }
+    @media (max-width: 420px) {
+        .booking-bar-bottom #captchaQuestion {
+            min-width: 70px !important;
+            height: 40px !important;
+            font-size: 1rem;
+        }
+        .booking-bar-bottom input[name="captcha"] {
+            width: 54px !important;
+            height: 40px !important;
+            font-size: 1rem !important;
+        }
+        .booking-bar-bottom button[onclick="refreshCaptcha()"] {
+            width: 40px !important;
+            height: 40px !important;
+        }
+        .booking-bar-bottom a[href*="t.me"] {
+            width: 48px !important;
+            height: 48px !important;
+        }
+    }
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="booking-page py-5">
-    <!-- Breadcrumbs Fixed -->
-    <div class="position-fixed top-0 w-100" style="z-index: 1050; padding-top: 80px; padding-left: 0; pointer-events: none;">
-        <div class="container">
-            <nav aria-label="breadcrumb" style="pointer-events: auto;">
-                <ol class="breadcrumb mb-0 py-2 px-3 rounded-3" style="background-color: rgba(0,0,0,0.5); display: inline-flex;">
-                    <li class="breadcrumb-item"><a href="{{ url_for('index') }}" class="text-white text-decoration-none opacity-75 hover-opacity-100">Главная</a></li>
-                    <li class="breadcrumb-item"><a href="{{ url_for('property_detail', id=property.id) }}" class="text-white text-decoration-none opacity-75 hover-opacity-100">{{ property.name }}</a></li>
-                    <li class="breadcrumb-item active text-white" aria-current="page">Оформление заявки</li>
-                </ol>
-            </nav>
-        </div>
-    </div>
-
-    <div class="container" style="margin-top: 60px;">
+    <div class="container">
+        <nav aria-label="breadcrumb" class="mb-4">
+            <ol class="breadcrumb mb-0">
+                <li class="breadcrumb-item"><a href="{{ url_for('index') }}">Главная</a></li>
+                <li class="breadcrumb-item"><a href="{{ url_for('property_detail', id=property.id) }}">{{ property.name }}</a></li>
+                <li class="breadcrumb-item active" aria-current="page">Оформление заявки</li>
+            </ol>
+        </nav>
         <div class="row">
             <div class="col-lg-8">
                 <div class="card border-0 shadow-sm mb-4">
@@ -351,9 +373,9 @@
 <!-- Fixed Bottom Booking Bar -->
 <div class="fixed-bottom booking-bar-bottom neon-effect-bottom floating-animation">
     <div class="container">
-        <div class="d-flex justify-content-between align-items-center py-3">
+        <div class="d-flex flex-column flex-md-row justify-content-between align-items-stretch align-items-md-center py-2 py-md-3 gap-2">
             <!-- Captcha Section -->
-            <div class="d-flex align-items-center gap-3">
+            <div class="d-flex align-items-center justify-content-between justify-content-md-start gap-2 gap-md-3 flex-wrap">
                 <div class="text-white fw-bold me-2 d-none d-md-block">Решите пример:</div>
                 <div class="position-relative">
                     <div id="captchaQuestion" class="form-control d-flex align-items-center justify-content-center fw-bold fs-5 bg-light text-dark" style="height: 45px; min-width: 80px; cursor: pointer; user-select: none;" title="Нажмите, чтобы обновить">
@@ -367,7 +389,7 @@
             </div>
             
             <!-- Submit Button -->
-            <div class="d-flex align-items-center gap-3">
+            <div class="d-flex align-items-center justify-content-between justify-content-md-end gap-2 gap-md-3">
                 <a href="{{ site_settings.social_telegram if site_settings and site_settings.social_telegram else 'https://t.me/imperial_village' }}" target="_blank" class="btn d-flex align-items-center justify-content-center shadow-lg rounded-3" style="width: 55px; height: 55px; padding: 0; background-color: #229ED9; border-color: #229ED9; color: white;">
                     <i class="bi bi-telegram" style="font-size: 2.5rem;"></i>
                 </a>
