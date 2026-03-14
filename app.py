@@ -2980,12 +2980,14 @@ def admin_api_daily_plan():
             resources_total += pt
             resources.append({
                 'id': r.id,
+                'resource_id': r.resource_id,
                 'resource_name': (r.resource.name if r.resource else ''),
                 'start': r.start_dt.strftime('%H:%M'),
                 'end': r.end_dt.strftime('%H:%M') if r.end_dt else '',
                 'status': r.status,
                 'price_total': pt,
-                'notes': r.notes or ''
+                'notes': r.notes or '',
+                'schedule_url': url_for('admin_amenity_resource_schedule', resource_id=r.resource_id, date=day.isoformat())
             })
 
         stay_total = float(b.total_price or 0) - options_total
@@ -3022,6 +3024,79 @@ def admin_api_daily_plan():
         'date': day.isoformat(),
         'properties': properties_json,
         'bookings': bookings_json
+    })
+
+@app.route('/admin/api/resource-plan')
+@admin_required
+def admin_api_resource_plan():
+    date_str = (request.args.get('date') or '').strip()
+    resource_id_raw = (request.args.get('resource_id') or '').strip()
+    if not date_str or not resource_id_raw:
+        return jsonify({'error': 'Missing parameters'}), 400
+
+    try:
+        day = datetime.strptime(date_str, '%Y-%m-%d').date()
+    except ValueError:
+        return jsonify({'error': 'Invalid date format'}), 400
+
+    try:
+        resource_id = int(resource_id_raw)
+    except ValueError:
+        return jsonify({'error': 'Invalid resource_id'}), 400
+
+    user = get_current_admin()
+    resource = AmenityResource.query.get_or_404(resource_id)
+    if not admin_can_access_property(user, resource.property):
+        return jsonify({'error': 'Недостаточно прав.'}), 403
+
+    start_dt = datetime.combine(day, datetime.min.time())
+    end_dt = start_dt + timedelta(days=1)
+
+    reservations = AmenityReservation.query.filter(
+        AmenityReservation.resource_id == resource.id,
+        AmenityReservation.status.in_(['requested', 'approved', 'completed']),
+        AmenityReservation.start_dt < end_dt,
+        AmenityReservation.end_dt > start_dt
+    ).order_by(AmenityReservation.start_dt.asc(), AmenityReservation.id.asc()).all()
+
+    status_counts = {'requested': 0, 'approved': 0, 'completed': 0}
+    total_revenue = 0.0
+    reservations_json = []
+    for r in reservations:
+        status_counts[r.status] = status_counts.get(r.status, 0) + 1
+        price_total = float(r.price_total or 0)
+        total_revenue += price_total
+        booking = r.booking
+        reservations_json.append({
+            'id': r.id,
+            'booking_id': r.booking_id,
+            'booking_status': (booking.status if booking else ''),
+            'guest_name': (booking.guest_name if booking else ''),
+            'guest_phone': (booking.guest_phone if booking else ''),
+            'start': r.start_dt.strftime('%H:%M'),
+            'end': r.end_dt.strftime('%H:%M') if r.end_dt else '',
+            'status': r.status,
+            'price_total': price_total,
+            'notes': r.notes or '',
+            'booking_edit_url': url_for('admin_booking_edit', booking_id=r.booking_id)
+        })
+
+    return jsonify({
+        'date': day.isoformat(),
+        'resource': {
+            'id': resource.id,
+            'name': resource.name,
+            'resource_type': resource.resource_type,
+            'property_id': resource.property_id,
+            'property_name': (resource.property.name if resource.property else ''),
+            'schedule_url': url_for('admin_amenity_resource_schedule', resource_id=resource.id, date=day.isoformat())
+        },
+        'stats': {
+            'total_reservations': len(reservations_json),
+            'total_revenue': total_revenue,
+            'status_counts': status_counts
+        },
+        'reservations': reservations_json
     })
 
 @app.route('/admin')
