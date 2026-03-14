@@ -2990,8 +2990,14 @@ def admin_api_daily_plan():
                 'schedule_url': url_for('admin_amenity_resource_schedule', resource_id=r.resource_id, date=day.isoformat())
             })
 
-        stay_total = float(b.total_price or 0) - options_total
-        total_with_resources = float(b.total_price or 0) + resources_total
+        stay_total_full = float(b.total_price or 0) - options_total
+        stay_days = (b.check_out - b.check_in).days if b.check_in and b.check_out else 0
+        if stay_days and stay_days > 0:
+            stay_total = stay_total_full / float(stay_days)
+        else:
+            stay_total = stay_total_full
+        stay_total = round(stay_total, 2)
+        total_with_resources = round(stay_total + options_total + resources_total, 2)
 
         bookings_json.append({
             'id': b.id,
