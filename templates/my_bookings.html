@@ -27,8 +27,6 @@
                     <div id="copy-status" class="small text-muted mt-2"></div>
                 </div>
 
-                {% set nights = (single_booking.check_out - single_booking.check_in).days %}
-                {% set base_total = (single_booking.property.price_per_night or 0) * nights * (single_booking.guests_count or 0) %}
                 {% set ns = namespace(options_total=0, resources_total=0) %}
                 {% for item in single_booking.selected_options %}
                     {% set ns.options_total = ns.options_total + (item.price * item.quantity) %}
@@ -39,7 +37,8 @@
                         {% set ns.resources_total = ns.resources_total + (r.price_total or 0) %}
                     {% endif %}
                 {% endfor %}
-                {% set total_calc = base_total + ns.options_total + ns.resources_total %}
+                {% set base_total = ((single_booking.total_price or 0) - ns.options_total) %}
+                {% set total_calc = (single_booking.total_price or 0) + ns.resources_total %}
 
                 <div class="card border-0 shadow-sm mb-4">
                     <div class="card-body p-4">
@@ -268,8 +267,6 @@
                                                     </div>
                                                     <div class="col-6">
                                                         <small class="text-muted">Сумма</small>
-                                                        {% set nights = (booking.check_out - booking.check_in).days %}
-                                                        {% set base_total = (booking.property.price_per_night or 0) * nights * (booking.guests_count or 0) %}
                                                         {% set ns = namespace(options_total=0, resources_total=0) %}
                                                         {% for item in booking.selected_options %}
                                                             {% set ns.options_total = ns.options_total + (item.price * item.quantity) %}
@@ -280,7 +277,8 @@
                                                                 {% set ns.resources_total = ns.resources_total + (r.price_total or 0) %}
                                                             {% endif %}
                                                         {% endfor %}
-                                                        {% set total_calc = base_total + ns.options_total + ns.resources_total %}
+                                                        {% set base_total = ((booking.total_price or 0) - ns.options_total) %}
+                                                        {% set total_calc = (booking.total_price or 0) + ns.resources_total %}
                                                         <div class="fw-bold">{{ total_calc|format_price }} ₽</div>
                                                         <div class="small text-muted">Проживание {{ base_total|format_price }} ₽ · Опции {{ ns.options_total|format_price }} ₽ · Ресурсы {{ ns.resources_total|format_price }} ₽</div>
                                                     </div>
@@ -416,8 +414,6 @@
                                                     </div>
                                                     <div class="col-6">
                                                         <small class="text-muted">Сумма</small>
-                                                        {% set nights = (booking.check_out - booking.check_in).days %}
-                                                        {% set base_total = (booking.property.price_per_night or 0) * nights * (booking.guests_count or 0) %}
                                                         {% set ns = namespace(options_total=0, resources_total=0) %}
                                                         {% for item in booking.selected_options %}
                                                             {% set ns.options_total = ns.options_total + (item.price * item.quantity) %}
@@ -428,7 +424,8 @@
                                                                 {% set ns.resources_total = ns.resources_total + (r.price_total or 0) %}
                                                             {% endif %}
                                                         {% endfor %}
-                                                        {% set total_calc = base_total + ns.options_total + ns.resources_total %}
+                                                        {% set base_total = ((booking.total_price or 0) - ns.options_total) %}
+                                                        {% set total_calc = (booking.total_price or 0) + ns.resources_total %}
                                                         <div class="fw-bold">{{ total_calc|format_price }} ₽</div>
                                                         <div class="small text-muted">Проживание {{ base_total|format_price }} ₽ · Опции {{ ns.options_total|format_price }} ₽ · Ресурсы {{ ns.resources_total|format_price }} ₽</div>
                                                     </div>

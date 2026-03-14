@@ -2735,6 +2735,16 @@ def get_dashboard_stats(start_date, end_date, user=None):
     if user and not user.is_superadmin:
         revenue_query = revenue_query.filter(access_filter)
 
+    amenity_revenue_query = db.session.query(db.func.sum(AmenityReservation.price_total)).join(
+        Booking, AmenityReservation.booking_id == Booking.id
+    ).filter(
+        Booking.check_out >= start_date,
+        Booking.check_in <= end_date,
+        AmenityReservation.status != 'cancelled'
+    )
+    if user and not user.is_superadmin:
+        amenity_revenue_query = amenity_revenue_query.filter(access_filter)
+
     paid_revenue = 0
     try:
         start_dt = datetime.combine(start_date, datetime.min.time())
@@ -2753,24 +2763,49 @@ def get_dashboard_stats(start_date, end_date, user=None):
         )
         if user and not user.is_superadmin:
             paid_revenue_query = paid_revenue_query.filter(access_filter)
-        paid_revenue = paid_revenue_query.scalar() or 0
+        paid_stay_revenue = paid_revenue_query.scalar() or 0
+
+        paid_amenity_revenue_query = db.session.query(db.func.sum(AmenityReservation.price_total)).join(
+            Booking, AmenityReservation.booking_id == Booking.id
+        ).filter(
+            Booking.id.in_(paid_booking_ids_q),
+            Booking.status.in_(['confirmed', 'completed']),
+            AmenityReservation.status != 'cancelled'
+        )
+        if user and not user.is_superadmin:
+            paid_amenity_revenue_query = paid_amenity_revenue_query.filter(access_filter)
+        paid_amenity_revenue = paid_amenity_revenue_query.scalar() or 0
+
+        paid_revenue = paid_stay_revenue + paid_amenity_revenue
     except Exception:
         paid_revenue = 0
     
     # Стоимость заявок (статус pending) - отображается в разделе "Заявки"
-    pending_revenue = revenue_query.filter(
+    pending_stay_revenue = revenue_query.filter(
         Booking.status == 'pending'
     ).scalar() or 0
+    pending_amenity_revenue = amenity_revenue_query.filter(
+        Booking.status == 'pending'
+    ).scalar() or 0
+    pending_revenue = pending_stay_revenue + pending_amenity_revenue
     
     # Стоимость бронирований (статус confirmed) - отображается в разделе "Бронирование"
-    booking_revenue = revenue_query.filter(
+    booking_stay_revenue = revenue_query.filter(
         Booking.status == 'confirmed'
     ).scalar() or 0
+    booking_amenity_revenue = amenity_revenue_query.filter(
+        Booking.status == 'confirmed'
+    ).scalar() or 0
+    booking_revenue = booking_stay_revenue + booking_amenity_revenue
     
     # Выручка от выполненных бронирований (статус completed) - отображается в разделе "Выручка"
-    completed_revenue = revenue_query.filter(
+    completed_stay_revenue = revenue_query.filter(
         Booking.status == 'completed'
     ).scalar() or 0
+    completed_amenity_revenue = amenity_revenue_query.filter(
+        Booking.status == 'completed'
+    ).scalar() or 0
+    completed_revenue = completed_stay_revenue + completed_amenity_revenue
     
     # Property count - filter by user access if not superadmin
     if user and not user.is_superadmin:
