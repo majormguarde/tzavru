@@ -144,23 +144,26 @@
 
             <div class="card border-0 bg-light">
                 <div class="card-body">
-                    <form method="POST" action="{{ url_for('admin_booking_amenity_add', booking_id=booking.id) }}" class="row g-2 align-items-end">
+                    <form id="amenityAddForm" method="POST" action="{{ url_for('admin_booking_amenity_add', booking_id=booking.id) }}" class="row g-2 align-items-end">
                         <div class="col-12 col-md-3">
                             <label class="form-label mb-1">Ресурс</label>
-                            <select name="resource_id" class="form-select form-select-sm" required>
+                            <select id="amenity_resource_id" name="resource_id" class="form-select form-select-sm" required>
                                 <option value="" selected disabled>Выберите...</option>
                                 {% for res in amenity_resources %}
-                                    <option value="{{ res.id }}">{{ res.name }}</option>
+                                    <option value="{{ res.id }}"
+                                            data-open="{{ res.open_time.strftime('%H:%M') if res.open_time else '00:00' }}"
+                                            data-close="{{ res.close_time.strftime('%H:%M') if res.close_time else '23:59' }}"
+                                            data-slot="{{ res.slot_minutes or 30 }}">{{ res.name }}</option>
                                 {% endfor %}
                             </select>
                         </div>
                         <div class="col-6 col-md-2">
                             <label class="form-label mb-1">Дата</label>
-                            <input type="date" name="date" class="form-control form-control-sm" min="{{ booking_date_bounds.min }}" max="{{ booking_date_bounds.max }}" required>
+                            <input id="amenity_date" type="date" name="date" class="form-control form-control-sm" min="{{ booking_date_bounds.min }}" max="{{ booking_date_bounds.max }}" value="{{ booking_date_bounds.min }}" required>
                         </div>
                         <div class="col-6 col-md-2">
                             <label class="form-label mb-1">Время</label>
-                            <select name="time" class="form-select form-select-sm" required>
+                            <select id="amenity_time" name="time" class="form-select form-select-sm" required>
                                 {% for t in time_options %}
                                     <option value="{{ t }}">{{ t }}</option>
                                 {% endfor %}
@@ -168,7 +171,7 @@
                         </div>
                         <div class="col-6 col-md-2">
                             <label class="form-label mb-1">Длительность (ч)</label>
-                            <input type="number" step="0.5" min="0.5" name="duration_hours" class="form-control form-control-sm" value="1" required>
+                            <input id="amenity_duration_hours" type="number" step="0.5" min="0.5" name="duration_hours" class="form-control form-control-sm" value="1" required>
                         </div>
                         <div class="col-6 col-md-1">
                             <label class="form-label mb-1">Статус</label>
@@ -186,6 +189,9 @@
                         <div class="col-12 col-md-8">
                             <label class="form-label mb-1">Комментарий</label>
                             <input type="text" name="notes" class="form-control form-control-sm" placeholder="Необязательно">
+                        </div>
+                        <div class="col-12">
+                            <div id="amenity_constraints" class="form-text"></div>
                         </div>
                         <div class="col-12 col-md-4 d-grid">
                             <button type="submit" class="btn btn-sm btn-primary">
@@ -432,7 +438,7 @@
                     <div class="small text-muted">
                         Ссылка для гостя: <br>
                         {% if booking.booking_token %}
-                        <code>{{ url_for('booking_success', booking_token=booking.booking_token, _external=True) }}</code>
+                        <code>{{ url_for('my_bookings', booking_token=booking.booking_token, _external=True) }}</code>
                         {% else %}
                         <span class="text-danger">Токен не сгенерирован. Пожалуйста, сохраните бронирование еще раз.</span>
                         {% endif %}
@@ -470,4 +476,120 @@
     </div>
 </div>
 {% endif %}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function() {
+    var resourceSelect = document.getElementById('amenity_resource_id');
+    var dateInput = document.getElementById('amenity_date');
+    var timeSelect = document.getElementById('amenity_time');
+    var durationInput = document.getElementById('amenity_duration_hours');
+    var constraintsEl = document.getElementById('amenity_constraints');
+
+    if (!resourceSelect || !timeSelect || !durationInput) return;
+
+    function parseHHMM(value) {
+        if (!value) return null;
+        var parts = String(value).split(':');
+        if (parts.length < 2) return null;
+        var h = Number(parts[0]);
+        var m = Number(parts[1]);
+        if (!Number.isFinite(h) || !Number.isFinite(m)) return null;
+        return h * 60 + m;
+    }
+
+    function minutesToHHMM(mins) {
+        var h = Math.floor(mins / 60);
+        var m = mins % 60;
+        return String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0');
+    }
+
+    function setConstraintsText(open, close, slot) {
+        if (!constraintsEl) return;
+        if (!open || !close || !slot) {
+            constraintsEl.textContent = '';
+            return;
+        }
+        constraintsEl.textContent = 'Часы: ' + open + '–' + close + ' • шаг: ' + slot + ' мин.';
+    }
+
+    function roundToStep(value, step) {
+        var v = Number(value);
+        var s = Number(step);
+        if (!Number.isFinite(v) || !Number.isFinite(s) || s <= 0) return value;
+        return Math.max(s, Math.round(v / s) * s);
+    }
+
+    function updateDurationStep(slotMinutes) {
+        var stepHours = slotMinutes / 60.0;
+        durationInput.step = String(stepHours);
+        durationInput.min = String(stepHours);
+        if (!durationInput.value) {
+            durationInput.value = String(stepHours);
+        } else {
+            durationInput.value = String(roundToStep(durationInput.value, stepHours));
+        }
+    }
+
+    function rebuildTimeOptions(openMin, closeMin, slotMinutes, durationMinutes) {
+        var selected = timeSelect.value;
+        timeSelect.innerHTML = '';
+
+        var lastStart = closeMin - durationMinutes;
+        if (lastStart < openMin) {
+            var opt = document.createElement('option');
+            opt.value = '';
+            opt.textContent = 'Нет доступных слотов';
+            timeSelect.appendChild(opt);
+            timeSelect.value = '';
+            timeSelect.disabled = true;
+            return;
+        }
+
+        timeSelect.disabled = false;
+        for (var t = openMin; t <= lastStart; t += slotMinutes) {
+            var hhmm = minutesToHHMM(t);
+            var o = document.createElement('option');
+            o.value = hhmm;
+            o.textContent = hhmm;
+            timeSelect.appendChild(o);
+        }
+
+        var canKeep = Array.from(timeSelect.options).some(function(o) { return o.value === selected; });
+        timeSelect.value = canKeep ? selected : (timeSelect.options[0] ? timeSelect.options[0].value : '');
+    }
+
+    function applyResourceConstraints() {
+        var opt = resourceSelect.options[resourceSelect.selectedIndex];
+        if (!opt) return;
+
+        var open = opt.dataset.open || null;
+        var close = opt.dataset.close || null;
+        var slotMinutes = Number(opt.dataset.slot || 30);
+        if (!Number.isFinite(slotMinutes) || slotMinutes <= 0) slotMinutes = 30;
+
+        updateDurationStep(slotMinutes);
+        setConstraintsText(open, close, slotMinutes);
+
+        var parsedOpen = parseHHMM(open);
+        var parsedClose = parseHHMM(close);
+        var openMin = (parsedOpen !== null && parsedOpen !== undefined) ? parsedOpen : 0;
+        var closeMin = (parsedClose !== null && parsedClose !== undefined) ? parsedClose : (23 * 60 + 59);
+        var durationMinutes = Math.max(slotMinutes, Math.round(Number(durationInput.value || 0) * 60));
+
+        rebuildTimeOptions(openMin, closeMin, slotMinutes, durationMinutes);
+    }
+
+    resourceSelect.addEventListener('change', applyResourceConstraints);
+    durationInput.addEventListener('change', applyResourceConstraints);
+    durationInput.addEventListener('input', function() {
+        if (durationInput.value) applyResourceConstraints();
+    });
+
+    if (dateInput && !dateInput.value) {
+        dateInput.value = dateInput.min || '';
+    }
+})();
+</script>
 {% endblock %}
