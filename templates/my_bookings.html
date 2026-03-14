@@ -53,9 +53,33 @@
                                 </div>
                             </div>
                             <div class="text-end">
+                                {% if single_booking.payment_status != 'paid' %}
+                                    <button id="btn-pay" class="btn btn-warning me-2" type="button">Оплатить по СБП</button>
+                                {% endif %}
                                 <button id="btn-print" class="btn btn-outline-secondary" type="button">Распечатать заказ</button>
                             </div>
                         </div>
+                        {% if single_booking.payment_status != 'paid' %}
+                            <div class="mt-4">
+                                <div class="row g-3 align-items-center">
+                                    <div class="col-12 col-md-4 text-center">
+                                        <img id="sbp-pay-qr" alt="QR для оплаты" style="max-width:220px;width:100%;height:auto;border-radius:12px;background:#fff;padding:8px;">
+                                        <div class="small text-muted mt-2">QR-код откроет страницу с реквизитами оплаты на телефоне</div>
+                                    </div>
+                                    <div class="col-12 col-md-8">
+                                        {% set deposit_percent = (site_settings.sbp_deposit_percent if site_settings and site_settings.sbp_deposit_percent is not none else 30) %}
+                                        {% set deposit_amount = (single_booking.total_price or 0) * (deposit_percent / 100) %}
+                                        {% set remaining_amount = (single_booking.total_price or 0) - deposit_amount %}
+                                        <div class="border rounded p-3">
+                                            <div class="fw-semibold mb-2">Оплата по СБП</div>
+                                            <div class="text-muted small mb-2">Номер телефона для оплаты: <span class="fw-semibold">{{ site_settings.phone_main if site_settings else '' }}</span></div>
+                                            <div class="text-muted small">К оплате сейчас: <span class="fw-semibold">{{ deposit_amount|format_price }} ₽</span> ({{ deposit_percent }}%)</div>
+                                            <div class="text-muted small">Остаток: <span class="fw-semibold">{{ remaining_amount|format_price }} ₽</span></div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        {% endif %}
                     </div>
                 </div>
 
@@ -64,6 +88,8 @@
                     var copyBtn = document.getElementById('btn-copy-link');
                     var copyStatus = document.getElementById('copy-status');
                     var printBtn = document.getElementById('btn-print');
+                    var payBtn = document.getElementById('btn-pay');
+                    var qrImg = document.getElementById('sbp-pay-qr');
 
                     function setStatus(el, msg, isError) {
                         if (!el) return;
@@ -74,6 +100,7 @@
 
                     var bookingData = {
                         bookingId: {{ single_booking.id }},
+                        bookingToken: {{ single_booking.booking_token|tojson }},
                         propertyName: {{ single_booking.property.name|tojson }},
                         propertyLocation: {{ single_booking.property.location|tojson }},
                         checkIn: "{{ single_booking.check_in.strftime('%d.%m.%Y') }}",
@@ -105,6 +132,7 @@
                         resourcesTotal: {{ ns.resources_total }},
                         totalPrice: {{ total_calc }}
                     };
+                    var payUrl = {{ url_for('my_bookings', booking_token=single_booking.booking_token, pay=1, _external=True)|tojson }};
 
                     async function copyText(text) {
                         if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -129,6 +157,18 @@
                                 setStatus(copyStatus, 'Ссылка скопирована.', false);
                             } catch (e) {
                                 setStatus(copyStatus, 'Не удалось скопировать ссылку.', true);
+                            }
+                        });
+                    }
+
+                    if (qrImg && payUrl) {
+                        qrImg.src = 'https://api.qrserver.com/v1/create-qr-code/?size=260x260&data=' + encodeURIComponent(payUrl);
+                    }
+
+                    if (payBtn) {
+                        payBtn.addEventListener('click', function() {
+                            if (window.openSbpPaymentModal && bookingData.bookingToken) {
+                                window.openSbpPaymentModal(bookingData.bookingToken);
                             }
                         });
                     }
@@ -290,7 +330,14 @@
                                             <div class="card-header bg-warning bg-opacity-10">
                                                 <div class="d-flex justify-content-between align-items-center">
                                                     <h5 class="mb-0">Заявка #{{ booking.id }}</h5>
-                                                    <span class="badge bg-warning text-dark">Ожидает подтверждения</span>
+                                                    <div class="d-flex gap-2 align-items-center">
+                                                        <span class="badge bg-warning text-dark">Ожидает подтверждения</span>
+                                                        {% if booking.payment_status == 'paid' %}
+                                                            <span class="badge bg-primary">Оплачено</span>
+                                                        {% elif booking.payment_status == 'awaiting' %}
+                                                            <span class="badge bg-info text-dark">Ожидает оплаты</span>
+                                                        {% endif %}
+                                                    </div>
                                                 </div>
                                             </div>
                                             <div class="card-body">
@@ -409,6 +456,11 @@
                                                     <a href="{{ url_for('my_bookings', booking_token=booking.booking_token) }}" class="btn btn-outline-primary btn-sm">
                                                         <i class="bi bi-eye me-1"></i>Подробнее
                                                     </a>
+                                                    {% if booking.payment_status != 'paid' %}
+                                                        <button class="btn btn-warning btn-sm" onclick="payBooking('{{ booking.booking_token }}')">
+                                                            <i class="bi bi-credit-card me-1"></i>{{ 'Реквизиты оплаты' if booking.payment_status == 'awaiting' else 'Оплатить' }}
+                                                        </button>
+                                                    {% endif %}
                                                     <button class="btn btn-outline-danger btn-sm" onclick="cancelBooking('{{ booking.booking_token }}')">
                                                         <i class="bi bi-x-lg me-1"></i>Отменить
                                                     </button>
@@ -437,7 +489,14 @@
                                             <div class="card-header bg-success bg-opacity-10">
                                                 <div class="d-flex justify-content-between align-items-center">
                                                     <h5 class="mb-0">Бронирование #{{ booking.id }}</h5>
-                                                    <span class="badge bg-success">Подтверждено</span>
+                                                    <div class="d-flex gap-2 align-items-center">
+                                                        <span class="badge bg-success">Подтверждено</span>
+                                                        {% if booking.payment_status == 'paid' %}
+                                                            <span class="badge bg-primary">Оплачено</span>
+                                                        {% elif booking.payment_status == 'awaiting' %}
+                                                            <span class="badge bg-info text-dark">Ожидает оплаты</span>
+                                                        {% endif %}
+                                                    </div>
                                                 </div>
                                             </div>
                                             <div class="card-body">
@@ -556,6 +615,11 @@
                                                     <a href="{{ url_for('my_bookings', booking_token=booking.booking_token) }}" class="btn btn-outline-primary btn-sm">
                                                         <i class="bi bi-eye me-1"></i>Подробнее
                                                     </a>
+                                                    {% if booking.payment_status != 'paid' %}
+                                                        <button class="btn btn-warning btn-sm" onclick="payBooking('{{ booking.booking_token }}')">
+                                                            <i class="bi bi-credit-card me-1"></i>{{ 'Реквизиты оплаты' if booking.payment_status == 'awaiting' else 'Оплатить' }}
+                                                        </button>
+                                                    {% endif %}
                                                     <button class="btn btn-outline-danger btn-sm" onclick="cancelBooking('{{ booking.booking_token }}')">
                                                         <i class="bi bi-x-lg me-1"></i>Отменить
                                                     </button>
@@ -641,7 +705,174 @@
     </div>
 </div>
 
+<div class="modal fade" id="sbpPaymentModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Оплата по СБП</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row g-3">
+                    <div class="col-12 col-md-5 text-center">
+                        <img id="sbpModalQr" alt="QR для оплаты" style="max-width:260px;width:100%;height:auto;border-radius:12px;background:#fff;padding:8px;">
+                        <div class="small text-muted mt-2">QR-код откроет страницу с реквизитами оплаты</div>
+                    </div>
+                    <div class="col-12 col-md-7">
+                        <div class="mb-3">
+                            <div class="text-muted small mb-1">Номер телефона</div>
+                            <div class="d-flex gap-2 align-items-start">
+                                <code id="sbpModalPhone" class="flex-grow-1 text-break"></code>
+                                <button id="sbpCopyPhone" class="btn btn-outline-secondary btn-sm" type="button">Скопировать</button>
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <div class="text-muted small mb-1">Сумма к оплате сейчас</div>
+                            <div class="d-flex gap-2 align-items-start">
+                                <code id="sbpModalAmount" class="flex-grow-1 text-break"></code>
+                                <button id="sbpCopyAmount" class="btn btn-outline-secondary btn-sm" type="button">Скопировать</button>
+                            </div>
+                            <div id="sbpModalSplit" class="small text-muted mt-1"></div>
+                        </div>
+                        <div class="mb-3">
+                            <div class="text-muted small mb-1">Назначение платежа</div>
+                            <div class="d-flex gap-2 align-items-start">
+                                <code id="sbpModalPurpose" class="flex-grow-1 text-break"></code>
+                                <button id="sbpCopyPurpose" class="btn btn-outline-secondary btn-sm" type="button">Скопировать</button>
+                            </div>
+                        </div>
+                        <div class="d-flex gap-2 flex-wrap">
+                            <button id="sbpCopyAll" class="btn btn-primary" type="button">Скопировать всё</button>
+                            <a id="sbpOpenPayLink" class="btn btn-outline-primary" href="#" target="_blank" rel="noreferrer">Открыть страницу оплаты</a>
+                        </div>
+                        <div id="sbpModalStatus" class="small text-muted mt-2"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Закрыть</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script>
+function sbpFormatRub(amount) {
+    const v = Number(amount || 0);
+    return v.toLocaleString('ru-RU') + ' ₽';
+}
+
+function sbpSetStatus(msg, isError) {
+    const el = document.getElementById('sbpModalStatus');
+    if (!el) return;
+    el.textContent = msg || '';
+    el.classList.toggle('text-danger', !!isError);
+    el.classList.toggle('text-muted', !isError);
+}
+
+async function sbpCopyText(text) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(text);
+        return;
+    }
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.left = '-9999px';
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+}
+
+window.openSbpPaymentModal = function(bookingToken) {
+    const modalEl = document.getElementById('sbpPaymentModal');
+    if (!modalEl) return;
+    const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+
+    const phoneEl = document.getElementById('sbpModalPhone');
+    const amountEl = document.getElementById('sbpModalAmount');
+    const purposeEl = document.getElementById('sbpModalPurpose');
+    const splitEl = document.getElementById('sbpModalSplit');
+    const qrEl = document.getElementById('sbpModalQr');
+    const copyPhoneBtn = document.getElementById('sbpCopyPhone');
+    const copyAmountBtn = document.getElementById('sbpCopyAmount');
+    const copyPurposeBtn = document.getElementById('sbpCopyPurpose');
+    const copyAllBtn = document.getElementById('sbpCopyAll');
+    const payLinkEl = document.getElementById('sbpOpenPayLink');
+
+    if (phoneEl) phoneEl.textContent = '...';
+    if (amountEl) amountEl.textContent = '...';
+    if (purposeEl) purposeEl.textContent = '...';
+    if (splitEl) splitEl.textContent = '';
+    if (qrEl) qrEl.removeAttribute('src');
+    if (payLinkEl) payLinkEl.href = '#';
+    sbpSetStatus('', false);
+
+    modal.show();
+
+    fetch('/api/payments/sbp/phone/request', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ booking_token: bookingToken })
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (!data || data.status !== 'ok') {
+            throw new Error((data && data.error) ? data.error : 'Не удалось получить реквизиты');
+        }
+
+        const phone = String(data.phone || '').trim();
+        const amount = Number(data.amount || 0);
+        const totalAmount = Number(data.total_amount || 0);
+        const percent = Number(data.deposit_percent || 0);
+        const remaining = Number(data.remaining_amount || 0);
+        const purpose = String(data.purpose || '').trim();
+        const payUrl = String(data.pay_url || '').trim();
+
+        if (phoneEl) phoneEl.textContent = phone;
+        if (amountEl) amountEl.textContent = sbpFormatRub(amount);
+        if (purposeEl) purposeEl.textContent = purpose;
+        if (splitEl) {
+            splitEl.textContent = 'Схема: ' + percent + '% / ' + (100 - percent) + '%. Итого: ' + sbpFormatRub(totalAmount) + '. Остаток: ' + sbpFormatRub(remaining) + '.';
+        }
+
+        if (payLinkEl && payUrl) payLinkEl.href = payUrl;
+        if (qrEl && payUrl) {
+            qrEl.src = 'https://api.qrserver.com/v1/create-qr-code/?size=320x320&data=' + encodeURIComponent(payUrl);
+        }
+
+        if (copyPhoneBtn) copyPhoneBtn.onclick = async function() { try { await sbpCopyText(phone); sbpSetStatus('Номер скопирован.', false); } catch (e) { sbpSetStatus('Не удалось скопировать номер.', true); } };
+        if (copyAmountBtn) copyAmountBtn.onclick = async function() { try { await sbpCopyText(String(amount)); sbpSetStatus('Сумма скопирована.', false); } catch (e) { sbpSetStatus('Не удалось скопировать сумму.', true); } };
+        if (copyPurposeBtn) copyPurposeBtn.onclick = async function() { try { await sbpCopyText(purpose); sbpSetStatus('Назначение скопировано.', false); } catch (e) { sbpSetStatus('Не удалось скопировать назначение.', true); } };
+        if (copyAllBtn) copyAllBtn.onclick = async function() {
+            try {
+                const text = 'Оплата по СБП\n' +
+                    'Номер: ' + phone + '\n' +
+                    'Сумма: ' + sbpFormatRub(amount) + '\n' +
+                    'Назначение: ' + purpose + '\n' +
+                    (payUrl ? ('Ссылка: ' + payUrl + '\n') : '');
+                await sbpCopyText(text);
+                sbpSetStatus('Реквизиты скопированы.', false);
+            } catch (e) {
+                sbpSetStatus('Не удалось скопировать реквизиты.', true);
+            }
+        };
+
+        sbpSetStatus('После оплаты дождитесь подтверждения администратором.', false);
+    })
+    .catch(err => {
+        sbpSetStatus(err && err.message ? err.message : 'Ошибка при подготовке оплаты', true);
+    });
+};
+
+function payBooking(bookingToken) {
+    if (window.openSbpPaymentModal) {
+        window.openSbpPaymentModal(bookingToken);
+    }
+}
+
 function cancelBooking(bookingToken) {
     if (confirm('Вы уверены, что хотите отменить это бронирование?')) {
         fetch('/api/booking/cancel', {
@@ -668,5 +899,17 @@ function cancelBooking(bookingToken) {
         });
     }
 }
+
+document.addEventListener('DOMContentLoaded', function() {
+    var autoOpen = {{ 'true' if auto_open_pay else 'false' }};
+    {% if single_booking and single_booking.booking_token %}
+    var token = {{ single_booking.booking_token|tojson }};
+    {% else %}
+    var token = null;
+    {% endif %}
+    if (autoOpen && token && window.openSbpPaymentModal) {
+        window.openSbpPaymentModal(token);
+    }
+});
 </script>
 {% endblock %}

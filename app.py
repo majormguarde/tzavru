@@ -76,7 +76,7 @@ app.config['SECRET_KEY'] = 'dev-secret-key-change-this-in-production'
 
 from models import db, User, UnitType, OptionType, CharacteristicType, PropertyOption, \
     PropertyCharacteristic, Property, Review, Booking, BookingDevice, BookingPasskey, \
-    BookingOption, AmenityResource, AmenityReservation, AmenityResourceType, ContactRequest, PropertyType, SiteSettings, AdminPropertyAccess, GuestJournal, ActivityLog
+    BookingOption, BookingPayment, AmenityResource, AmenityReservation, AmenityResourceType, ContactRequest, PropertyType, SiteSettings, AdminPropertyAccess, GuestJournal, ActivityLog
 
 # Initialize db with app
 db.init_app(app)
@@ -1724,6 +1724,108 @@ def api_booking_cancel():
         
     return jsonify({'status': 'ok', 'message': 'Бронирование успешно отменено'})
 
+def _sbp_phone_number():
+    try:
+        settings = SiteSettings.query.first()
+    except Exception:
+        settings = None
+    phone = (settings.phone_main if settings else '') or ''
+    return phone.strip()
+
+def _sbp_deposit_percent():
+    try:
+        settings = SiteSettings.query.first()
+        raw = getattr(settings, 'sbp_deposit_percent', None) if settings else None
+    except Exception:
+        raw = None
+    try:
+        val = int(raw) if raw is not None else 30
+    except Exception:
+        val = 30
+    return max(1, min(100, val))
+
+@app.route('/api/payments/sbp/phone/request', methods=['POST'])
+def api_payments_sbp_phone_request():
+    payload = request.get_json(silent=True) or {}
+    booking_token = (payload.get('booking_token') or '').strip()
+
+    if not booking_token:
+        return jsonify({'status': 'error', 'error': 'Не указан токен'}), 400
+
+    booking = Booking.query.filter_by(booking_token=booking_token).first()
+    if not booking:
+        return jsonify({'status': 'error', 'error': 'Бронирование не найдено'}), 404
+
+    if booking.status == 'cancelled':
+        return jsonify({'status': 'error', 'error': 'Бронирование отменено'}), 400
+
+    if booking.payment_status == 'paid':
+        return jsonify({'status': 'ok', 'message': 'Бронирование уже оплачено'}), 200
+
+    phone = _sbp_phone_number()
+    if not phone:
+        return jsonify({'status': 'error', 'error': 'Не настроен номер телефона для оплаты по СБП'}), 500
+
+    existing_payment = BookingPayment.query.filter(
+        BookingPayment.booking_id == booking.id,
+        BookingPayment.provider == 'sbp_phone',
+        BookingPayment.kind == 'booking',
+        BookingPayment.status.in_(['requested'])
+    ).order_by(BookingPayment.created_at.desc()).first()
+
+    total_amount = round(float(booking.total_price or 0), 2)
+    if total_amount < 1:
+        return jsonify({'status': 'error', 'error': 'Сумма платежа должна быть не меньше 1 ₽'}), 400
+
+    deposit_percent = _sbp_deposit_percent()
+    deposit_amount = round((total_amount * float(deposit_percent) / 100.0), 2)
+    remaining_amount = round((total_amount - deposit_amount), 2)
+    pay_url = url_for('my_bookings', booking_token=booking.booking_token, pay=1, _external=True)
+    purpose = f'Бронирование #{booking.id}. Предоплата {deposit_percent}%'
+    raw = {
+        'phone': phone,
+        'total_amount': total_amount,
+        'deposit_percent': deposit_percent,
+        'deposit_amount': deposit_amount,
+        'remaining_amount': remaining_amount,
+        'purpose': purpose,
+        'pay_url': pay_url
+    }
+
+    if existing_payment:
+        existing_payment.amount = deposit_amount
+        existing_payment.currency = 'RUB'
+        existing_payment.raw_response = json.dumps(raw, ensure_ascii=False)
+    else:
+        payment = BookingPayment(
+            booking_id=booking.id,
+            provider='sbp_phone',
+            kind='booking',
+            status='requested',
+            amount=deposit_amount,
+            currency='RUB',
+            raw_response=json.dumps(raw, ensure_ascii=False)
+        )
+        db.session.add(payment)
+
+    if booking.payment_status != 'awaiting':
+        booking.payment_status = 'awaiting'
+
+    db.session.commit()
+    log_guest_action(booking_id=booking.id, action_type='payment_requested', description=f'Запрошена оплата по СБП на номер {phone}', request=request)
+
+    return jsonify({
+        'status': 'ok',
+        'phone': phone,
+        'total_amount': total_amount,
+        'deposit_percent': deposit_percent,
+        'amount': deposit_amount,
+        'remaining_amount': remaining_amount,
+        'purpose': purpose,
+        'pay_url': pay_url,
+        'booking_id': booking.id
+    }), 200
+
 def log_guest_action(user_id=None, booking_id=None, action_type='', description='', request=None):
     """Log guest actions to the journal"""
     try:
@@ -2248,6 +2350,7 @@ def confirm_booking(booking_token):
 def my_bookings():
     """Страница 'Мои заявки'. Для гостей может открываться по booking_token."""
     booking_token = (request.args.get('booking_token') or '').strip()
+    auto_open_pay = bool((request.args.get('pay') or '').strip())
 
     if booking_token:
         booking = Booking.query.filter_by(booking_token=booking_token).first_or_404()
@@ -2313,7 +2416,8 @@ def my_bookings():
                          booking_date_bounds=booking_date_bounds,
                          time_options=time_options,
                          single_booking=(user_bookings[0] if booking_token and user_bookings else None),
-                         public_view=public_view)
+                         public_view=public_view,
+                         auto_open_pay=auto_open_pay)
 
 def _find_amenity_conflict(resource, start_dt, end_dt, exclude_reservation_id=None, statuses=None):
     statuses = statuses or ['requested', 'approved', 'completed']
@@ -2750,34 +2854,18 @@ def get_dashboard_stats(start_date, end_date, user=None):
     try:
         start_dt = datetime.combine(start_date, datetime.min.time())
         end_dt = datetime.combine(end_date, datetime.max.time())
-
-        paid_booking_ids_q = db.session.query(GuestJournal.booking_id).filter(
-            GuestJournal.action_type == 'booking_confirmed',
-            GuestJournal.booking_id.isnot(None),
-            GuestJournal.created_at >= start_dt,
-            GuestJournal.created_at <= end_dt
-        ).distinct()
-
-        paid_revenue_query = db.session.query(db.func.sum(Booking.total_price)).filter(
-            Booking.id.in_(paid_booking_ids_q),
-            Booking.status.in_(['confirmed', 'completed'])
+        paid_revenue_query = db.session.query(db.func.sum(BookingPayment.amount)).join(
+            Booking, BookingPayment.booking_id == Booking.id
+        ).filter(
+            BookingPayment.status == 'succeeded',
+            BookingPayment.paid_at.isnot(None),
+            BookingPayment.paid_at >= start_dt,
+            BookingPayment.paid_at <= end_dt
         )
         if user and not user.is_superadmin:
             paid_revenue_query = paid_revenue_query.filter(access_filter)
-        paid_stay_revenue = paid_revenue_query.scalar() or 0
 
-        paid_amenity_revenue_query = db.session.query(db.func.sum(AmenityReservation.price_total)).join(
-            Booking, AmenityReservation.booking_id == Booking.id
-        ).filter(
-            Booking.id.in_(paid_booking_ids_q),
-            Booking.status.in_(['confirmed', 'completed']),
-            AmenityReservation.status != 'cancelled'
-        )
-        if user and not user.is_superadmin:
-            paid_amenity_revenue_query = paid_amenity_revenue_query.filter(access_filter)
-        paid_amenity_revenue = paid_amenity_revenue_query.scalar() or 0
-
-        paid_revenue = paid_stay_revenue + paid_amenity_revenue
+        paid_revenue = paid_revenue_query.scalar() or 0
     except Exception:
         paid_revenue = 0
     
@@ -4003,10 +4091,45 @@ def admin_booking_edit(booking_id):
             booking.total_price = float(request.form['total_price'])
             old_status = booking.status
             booking.status = request.form['status']
+            old_payment_status = booking.payment_status or 'unpaid'
+            new_payment_status = (request.form.get('payment_status') or old_payment_status).strip()
+            if new_payment_status not in ['unpaid', 'awaiting', 'paid']:
+                new_payment_status = old_payment_status
+            booking.payment_status = new_payment_status
             
             # Ensure booking token exists
             if not booking.booking_token:
                 booking.booking_token = _generate_token()
+
+            if old_payment_status != 'paid' and booking.payment_status == 'paid':
+                amount_value = round(float(booking.total_price or 0), 2)
+                existing_paid_payment = BookingPayment.query.filter(
+                    BookingPayment.booking_id == booking.id,
+                    BookingPayment.provider == 'sbp_phone',
+                    BookingPayment.kind == 'booking',
+                    BookingPayment.status == 'succeeded',
+                    BookingPayment.paid_at.isnot(None)
+                ).first()
+                if not existing_paid_payment:
+                    payment = BookingPayment(
+                        booking_id=booking.id,
+                        provider='sbp_phone',
+                        kind='booking',
+                        status='succeeded',
+                        amount=amount_value,
+                        currency='RUB',
+                        paid_at=datetime.utcnow()
+                    )
+                    db.session.add(payment)
+                log_guest_action(booking_id=booking.id, action_type='payment_succeeded', description=f'Оплата бронирования #{booking.id} подтверждена администратором', request=request)
+
+            if old_payment_status == 'paid' and booking.payment_status != 'paid':
+                BookingPayment.query.filter(
+                    BookingPayment.booking_id == booking.id,
+                    BookingPayment.provider == 'sbp_phone',
+                    BookingPayment.kind == 'booking',
+                    BookingPayment.status == 'succeeded'
+                ).update({'status': 'cancelled', 'paid_at': None, 'updated_at': datetime.utcnow()}, synchronize_session=False)
             
             if old_property_id != booking.property_id:
                 AmenityReservation.query.filter(
@@ -4966,6 +5089,13 @@ def admin_settings():
         settings.map_url = request.form.get('map_url', '')
         settings.phone_main = request.form.get('phone_main', '')
         settings.phone_secondary = request.form.get('phone_secondary', '')
+        sbp_deposit_percent_raw = (request.form.get('sbp_deposit_percent') or '').strip()
+        try:
+            sbp_deposit_percent = int(sbp_deposit_percent_raw) if sbp_deposit_percent_raw else 30
+        except ValueError:
+            sbp_deposit_percent = 30
+        sbp_deposit_percent = max(1, min(100, sbp_deposit_percent))
+        settings.sbp_deposit_percent = sbp_deposit_percent
         settings.email_info = request.form.get('email_info', '')
         settings.address = request.form.get('address', '')
         

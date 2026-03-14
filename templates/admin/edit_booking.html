@@ -26,13 +26,21 @@
                             {% endfor %}
                         </select>
                     </div>
-                    <div class="col-md-6">
+                    <div class="col-md-3">
                         <label class="form-label">Статус</label>
                         <select name="status" class="form-select">
                             <option value="pending" {% if booking and booking.status == 'pending' %}selected{% endif %}>Заявка</option>
                             <option value="confirmed" {% if booking and booking.status == 'confirmed' %}selected{% endif %}>Бронирование</option>
                             <option value="cancelled" {% if booking and booking.status == 'cancelled' %}selected{% endif %}>Отменено</option>
                             <option value="completed" {% if booking and booking.status == 'completed' %}selected{% endif %}>Завершено</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Оплата</label>
+                        <select name="payment_status" class="form-select">
+                            <option value="unpaid" {% if booking and booking.payment_status == 'unpaid' %}selected{% endif %}>Не оплачено</option>
+                            <option value="awaiting" {% if booking and booking.payment_status == 'awaiting' %}selected{% endif %}>Ожидает оплаты</option>
+                            <option value="paid" {% if booking and booking.payment_status == 'paid' %}selected{% endif %}>Оплачено</option>
                         </select>
                     </div>
 

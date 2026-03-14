@@ -43,6 +43,11 @@
                     </div>
 
                     <div class="mb-3">
+                        <label class="form-label">Предоплата по СБП (%)</label>
+                        <input type="number" name="sbp_deposit_percent" class="form-control" value="{{ settings.sbp_deposit_percent if settings.sbp_deposit_percent is not none else 30 }}" min="1" max="100" step="1">
+                    </div>
+
+                    <div class="mb-3">
                         <label class="form-label">Email для связи</label>
                         <input type="email" name="email_info" class="form-control" value="{{ settings.email_info or '' }}">
                     </div>

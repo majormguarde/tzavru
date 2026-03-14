@@ -122,6 +122,7 @@ class Booking(db.Model):
     special_requests = db.Column(db.Text)
     total_price = db.Column(db.Float, nullable=False)
     status = db.Column(db.String(20), default='pending')
+    payment_status = db.Column(db.String(20), default='unpaid')
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     booking_token = db.Column(db.String(64), unique=True, index=True)
     cancel_reason = db.Column(db.Text)
@@ -129,6 +130,25 @@ class Booking(db.Model):
     is_email_confirmed = db.Column(db.Boolean, default=False)
     
     property = db.relationship('Property', backref=db.backref('bookings', lazy=True, cascade="all, delete-orphan"))
+
+class BookingPayment(db.Model):
+    __tablename__ = 'booking_payment'
+    id = db.Column(db.Integer, primary_key=True)
+    booking_id = db.Column(db.Integer, db.ForeignKey('booking.id'), nullable=False, index=True)
+    provider = db.Column(db.String(30), nullable=False, default='sbp_phone')
+    provider_payment_id = db.Column(db.String(80), unique=True, index=True)
+    kind = db.Column(db.String(20), nullable=False, default='booking')
+    status = db.Column(db.String(30), nullable=False, default='requested', index=True)
+    amount = db.Column(db.Float, nullable=False, default=0.0)
+    currency = db.Column(db.String(3), nullable=False, default='RUB')
+    confirmation_url = db.Column(db.Text)
+    idempotency_key = db.Column(db.String(64), index=True)
+    paid_at = db.Column(db.DateTime)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    raw_response = db.Column(db.Text)
+
+    booking = db.relationship('Booking', backref=db.backref('payments', lazy=True, cascade="all, delete-orphan"))
 
 class BookingDevice(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -264,6 +284,7 @@ class SiteSettings(db.Model):
     map_url = db.Column(db.Text)
     phone_main = db.Column(db.String(50), default="+7 900 123-45-67")
     phone_secondary = db.Column(db.String(50))
+    sbp_deposit_percent = db.Column(db.Integer, default=30)
     email_info = db.Column(db.String(120), default="info@imperial-collection.ru")
     address = db.Column(db.String(200), default="Псковская область, Россия")
     
