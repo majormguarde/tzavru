@@ -87,11 +87,25 @@
 
                         <hr class="border-secondary my-4">
 
+                        {% set nights = (booking.check_out - booking.check_in).days %}
+                        {% set base_total = (booking.property.price_per_night or 0) * nights * booking.guests_count %}
+                        {% set ns = namespace(options_total=0, resources_total=0) %}
+                        {% for item in booking.selected_options %}
+                            {% set ns.options_total = ns.options_total + (item.price * item.quantity) %}
+                        {% endfor %}
+                        {% for ar in booking.amenity_reservations if ar.status != 'cancelled' %}
+                            {% set ns.resources_total = ns.resources_total + (ar.price_total or 0) %}
+                        {% endfor %}
+                        {% set calc_total = base_total + ns.options_total + ns.resources_total %}
+
                         <div class="text-muted small">
                             <div class="mb-1"><span class="text-light">Объект:</span> {{ booking.property.name }}</div>
                             <div class="mb-1"><span class="text-light">Даты:</span> {{ booking.check_in.strftime('%d.%m.%Y') }} – {{ booking.check_out.strftime('%d.%m.%Y') }}</div>
                             <div class="mb-1"><span class="text-light">Гостей:</span> {{ booking.guests_count }}</div>
-                            <div class="mb-1"><span class="text-light">Сумма:</span> {{ "{:,.0f}".format(booking.total_price) }} ₽</div>
+                            <div class="mb-1"><span class="text-light">Проживание:</span> {{ "{:,.0f}".format(base_total) }} ₽</div>
+                            <div class="mb-1"><span class="text-light">Опции:</span> {{ "{:,.0f}".format(ns.options_total) }} ₽</div>
+                            <div class="mb-1"><span class="text-light">Ресурсы:</span> {{ "{:,.0f}".format(ns.resources_total) }} ₽</div>
+                            <div class="mb-1"><span class="text-light">Итого:</span> {{ "{:,.0f}".format(calc_total) }} ₽</div>
                             <div class="mb-0"><span class="text-light">Номер брони:</span> #{{ booking.id }}</div>
                         </div>
 
@@ -162,12 +176,25 @@
                     name: {{ item.option_name|tojson }},
                     qty: {{ item.quantity }},
                     pricePerUnit: {{ item.price }},
-                    lineTotal: {{ item.price * item.quantity * ((booking.check_out - booking.check_in).days) }}
+                    lineTotal: {{ item.price * item.quantity }}
                 },
                 {% endfor %}
             ],
-            optionsTotal: {{ booking.total_price - (booking.property.price_per_night * ((booking.check_out - booking.check_in).days)) }},
-            totalPrice: {{ booking.total_price }},
+            resources: [
+                {% for ar in booking.amenity_reservations if ar.status != 'cancelled' %}
+                {
+                    name: {{ (ar.resource.name if ar.resource else 'Ресурс')|tojson }},
+                    start: {{ (ar.start_dt.strftime('%d.%m.%Y %H:%M') if ar.start_dt else '')|tojson }},
+                    end: {{ (ar.end_dt.strftime('%d.%m.%Y %H:%M') if ar.end_dt else '')|tojson }},
+                    priceTotal: {{ (ar.price_total or 0) }},
+                    status: {{ ar.status|tojson }}
+                },
+                {% endfor %}
+            ],
+            baseTotal: {{ base_total }},
+            optionsTotal: {{ ns.options_total }},
+            resourcesTotal: {{ ns.resources_total }},
+            totalPrice: {{ calc_total }},
             createdAt: "{{ booking.created_at.strftime('%d.%m.%Y %H:%M') if booking.created_at else '' }}"
         };
 
@@ -249,6 +276,14 @@
                 var optionsRows = data.options.length
                     ? data.options.map(item => `<tr><td>${item.name}</td><td>${item.qty}</td><td>${item.pricePerUnit.toLocaleString('ru-RU')} ₽</td><td>${item.lineTotal.toLocaleString('ru-RU')} ₽</td></tr>`).join('')
                     : '<tr><td colspan="4" style="text-align:center;color:#666;">Опции не выбраны</td></tr>';
+                var resourcesRows = data.resources.length
+                    ? data.resources.map(item => `<tr><td>${item.name}</td><td>${item.start} – ${item.end}</td><td style="text-align:right;">${item.priceTotal.toLocaleString('ru-RU')} ₽</td></tr>`).join('')
+                    : '<tr><td colspan="3" style="text-align:center;color:#666;">Ресурсы не выбраны</td></tr>';
+                var hasCoords = data.propertyLatitude !== null && data.propertyLatitude !== undefined && data.propertyLatitude !== '' && data.propertyLongitude !== null && data.propertyLongitude !== undefined && data.propertyLongitude !== '';
+                var lat = hasCoords ? Number(data.propertyLatitude) : null;
+                var lon = hasCoords ? Number(data.propertyLongitude) : null;
+                var mapUrl = hasCoords ? `https://staticmap.openstreetmap.de/staticmap.php?center=${encodeURIComponent(lat + ',' + lon)}&zoom=15&size=900x320&maptype=mapnik&markers=${encodeURIComponent(lat + ',' + lon + ',red-pushpin')}` : '';
+                var mapLink = hasCoords ? `https://www.openstreetmap.org/?mlat=${encodeURIComponent(lat)}&mlon=${encodeURIComponent(lon)}#map=15/${encodeURIComponent(lat)}/${encodeURIComponent(lon)}` : '';
 
                 var printWindow = window.open('', '_blank', 'width=980,height=760');
                 if (!printWindow) return;
@@ -268,6 +303,8 @@
                             th, td { border: 1px solid #ddd; padding: 8px; text-align: left; font-size: 14px; }
                             th { background: #f3f3f3; }
                             .total { margin-top: 12px; text-align: right; font-size: 16px; font-weight: 700; }
+                            .section-title { margin-top: 16px; font-weight: 700; }
+                            .map { margin-top: 14px; }
                         </style>
                     </head>
                     <body>
@@ -282,7 +319,10 @@
                             <div><span class="label">Гость:</span> ${data.guestName}</div>
                             <div><span class="label">Телефон:</span> ${data.guestPhone}</div>
                             <div><span class="label">Email:</span> ${data.guestEmail}</div>
+                            ${hasCoords ? `<div><span class="label">Координаты:</span> ${lat}, ${lon} • <a href="${mapLink}" target="_blank" rel="noreferrer">Открыть карту</a></div>` : ``}
                         </div>
+                        ${hasCoords ? `<div class="map"><img src="${mapUrl}" alt="Карта" style="max-width:100%;height:auto;border:1px solid #ddd;"></div>` : ``}
+                        <div class="section-title">Опции</div>
                         <table>
                             <thead>
                                 <tr>
@@ -294,7 +334,23 @@
                             </thead>
                             <tbody>${optionsRows}</tbody>
                         </table>
-                        <div class="total">ИТОГО к оплате: ${data.totalPrice.toLocaleString('ru-RU')} ₽</div>
+                        <div class="section-title">Ресурсы</div>
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Ресурс</th>
+                                    <th>Период</th>
+                                    <th style="text-align:right;">Стоимость</th>
+                                </tr>
+                            </thead>
+                            <tbody>${resourcesRows}</tbody>
+                        </table>
+                        <div class="total">
+                            Проживание: ${data.baseTotal.toLocaleString('ru-RU')} ₽<br>
+                            Опции: ${data.optionsTotal.toLocaleString('ru-RU')} ₽<br>
+                            Ресурсы: ${data.resourcesTotal.toLocaleString('ru-RU')} ₽<br>
+                            ИТОГО к оплате: ${data.totalPrice.toLocaleString('ru-RU')} ₽
+                        </div>
                     </body>
                     </html>
                 `;

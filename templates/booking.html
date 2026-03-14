@@ -240,7 +240,7 @@
                                                     <select name="amenity_resource_id" class="form-select">
                                                         <option value="" selected>Не выбирать</option>
                                                         {% for res in amenity_resources %}
-                                                            <option value="{{ res.id }}">{{ res.name }}{% if res.price and res.price > 0 %} (+{{ res.price|format_price }} ₽{% if res.unit_type %}/{{ res.unit_type.short_name }}{% endif %}){% endif %}</option>
+                                                            <option value="{{ res.id }}" data-name="{{ res.name }}" data-price="{{ res.price or 0 }}" data-unit-short="{{ res.unit_type.short_name if res.unit_type else '' }}" data-unit-name="{{ res.unit_type.name if res.unit_type else '' }}">{{ res.name }}{% if res.price and res.price > 0 %} (+{{ res.price|format_price }} ₽{% if res.unit_type %}/{{ res.unit_type.short_name }}{% endif %}){% endif %}</option>
                                                         {% endfor %}
                                                     </select>
                                                 </div>
@@ -870,6 +870,7 @@
                 const guestsCount = Math.max(1, Number(guestsInput ? guestsInput.value : 1) || 1);
                 const baseTotal = diffDays * guestsCount * pricePerNight;
                 let optionsTotal = 0;
+                let resourcesTotal = 0;
                 let selectedOptionsRows = '';
 
                 optionRows.forEach(row => {
@@ -886,7 +887,28 @@
                     }
                 });
 
-                const total = baseTotal + optionsTotal;
+                if (amenityResourceSelect && amenityResourceSelect.value) {
+                    const selectedOpt = amenityResourceSelect.selectedOptions && amenityResourceSelect.selectedOptions[0] ? amenityResourceSelect.selectedOptions[0] : null;
+                    const price = selectedOpt ? Number(selectedOpt.dataset.price || 0) : 0;
+                    const unitShort = (selectedOpt ? (selectedOpt.dataset.unitShort || '') : '').trim().toLowerCase();
+                    const unitName = (selectedOpt ? (selectedOpt.dataset.unitName || '') : '').trim().toLowerCase();
+                    const unit = `${unitShort} ${unitName}`.trim();
+                    const durationHours = Math.max(0.5, Number(amenityDurationInput ? amenityDurationInput.value : 1) || 1);
+                    const durationMinutes = durationHours * 60;
+
+                    if (price > 0) {
+                        if (unit.includes('час') || unit.includes('ч') || ['h', 'hr', 'hour', 'hours'].includes(unitShort)) {
+                            resourcesTotal = price * durationHours;
+                        } else if (unit.includes('мин')) {
+                            resourcesTotal = price * durationMinutes;
+                        } else {
+                            resourcesTotal = price;
+                        }
+                        resourcesTotal = Math.round(resourcesTotal * 100) / 100;
+                    }
+                }
+
+                const total = baseTotal + optionsTotal + resourcesTotal;
 
                 if (!selectedOptionsRows) {
                     selectedOptionsRows = `<tr><td colspan="3" class="text-center text-muted">Опции не выбраны</td></tr>`;
@@ -908,6 +930,11 @@
                                     <td><strong>Опции всего</strong></td>
                                     <td></td>
                                     <td class="text-end"><strong>${optionsTotal.toLocaleString('ru-RU')} ₽</strong></td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Ресурсы всего</strong></td>
+                                    <td></td>
+                                    <td class="text-end"><strong>${resourcesTotal.toLocaleString('ru-RU')} ₽</strong></td>
                                 </tr>
                                 <tr class="total-row">
                                     <td><strong>Итого</strong></td>

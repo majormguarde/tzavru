@@ -31,7 +31,7 @@
                 <a class="list-group-item list-group-item-action" data-bs-toggle="collapse" href="#propertiesSubmenu" role="button" aria-expanded="false" aria-controls="propertiesSubmenu">
                     <i class="bi bi-house-door"></i> Объекты <i class="bi bi-chevron-down ms-auto" style="font-size: 0.8em;"></i>
                 </a>
-                <div class="collapse {% if 'property' in request.endpoint or 'add_property' in request.endpoint %}show{% endif %}" id="propertiesSubmenu">
+                <div class="collapse {% if 'property' in request.endpoint or 'add_property' in request.endpoint or 'admin_amenity_' in request.endpoint %}show{% endif %}" id="propertiesSubmenu">
                     <a href="{{ url_for('admin_properties') }}" class="list-group-item list-group-item-action ps-5 py-2 small {% if 'admin_properties' in request.endpoint or 'admin_property_edit' in request.endpoint %}active{% endif %}">
                         <i class="bi bi-list-ul me-2"></i> Все объекты
                     </a>
@@ -40,13 +40,13 @@
                         <i class="bi bi-plus-circle me-2"></i> Добавить объект
                     </a>
                     {% endif %}
+                    <a href="{{ url_for('admin_amenity_resources') }}" class="list-group-item list-group-item-action ps-5 py-2 small {% if 'admin_amenity_' in request.endpoint %}active{% endif %}">
+                        <i class="bi bi-calendar2-week me-2"></i> Ресурсы
+                    </a>
                 </div>
 
                 <a href="{{ url_for('admin_bookings') }}" class="list-group-item list-group-item-action {% if 'booking' in request.endpoint %}active{% endif %}">
                     <i class="bi bi-calendar-check"></i> Бронирования
-                </a>
-                <a href="{{ url_for('admin_amenity_resources') }}" class="list-group-item list-group-item-action {% if 'admin_amenity_' in request.endpoint %}active{% endif %}">
-                    <i class="bi bi-calendar2-week"></i> Ресурсы
                 </a>
                 <a href="{{ url_for('admin_contacts') }}" class="list-group-item list-group-item-action {% if 'contact' in request.endpoint %}active{% endif %}">
                     <i class="bi bi-envelope"></i> Сообщения

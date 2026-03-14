@@ -1181,6 +1181,8 @@ def generate_invoice_pdf(booking):
     
     # Base Stay
     base_price = booking.property.price_per_night * days * booking.guests_count
+    options_total = 0.0
+    resources_total = 0.0
     c.drawString(2*cm, y, f"Проживание ({days} ночей, {booking.guests_count} гостей)")
     c.drawString(10*cm, y, f"{days} x {booking.guests_count}")
     c.drawString(13*cm, y, f"{booking.property.price_per_night:,.2f} руб.")
@@ -1191,6 +1193,7 @@ def generate_invoice_pdf(booking):
     if booking.selected_options:
         for option in booking.selected_options:
             opt_total = option.price * option.quantity
+            options_total += opt_total
             unit = "шт."
             if option.option_type and option.option_type.unit_type:
                 unit = option.option_type.unit_type.short_name
@@ -1200,13 +1203,60 @@ def generate_invoice_pdf(booking):
             c.drawString(13*cm, y, f"{option.price:,.2f} руб.")
             c.drawString(16*cm, y, f"{opt_total:,.2f} руб.")
             y -= 0.6*cm
+
+    reservations = [r for r in getattr(booking, 'amenity_reservations', []) if r and r.status != 'cancelled']
+    if reservations:
+        for reservation in reservations:
+            try:
+                res_name = reservation.resource.name if reservation.resource else 'Ресурс'
+            except Exception:
+                res_name = 'Ресурс'
+
+            duration_minutes = 0
+            try:
+                if reservation.start_dt and reservation.end_dt:
+                    duration_minutes = int(round((reservation.end_dt - reservation.start_dt).total_seconds() / 60.0))
+            except Exception:
+                duration_minutes = 0
+
+            unit = "шт."
+            unit_short = ""
+            unit_name = ""
+            price_per_unit = 0.0
+            try:
+                if reservation.resource:
+                    price_per_unit = float(reservation.resource.price or 0.0)
+                    if reservation.resource.unit_type:
+                        unit_short = (reservation.resource.unit_type.short_name or '').strip()
+                        unit_name = (reservation.resource.unit_type.name or '').strip()
+                        unit = unit_short or unit
+            except Exception:
+                price_per_unit = 0.0
+
+            unit_full = f"{unit_short} {unit_name}".strip().lower()
+            qty_display = "1"
+            if duration_minutes > 0:
+                if ('час' in unit_full) or ('ч' in unit_full) or (unit_short.strip().lower() in ['h', 'hr', 'hour', 'hours']):
+                    qty_display = f"{(duration_minutes / 60.0):.2f} {unit}"
+                elif 'мин' in unit_full:
+                    qty_display = f"{duration_minutes} {unit}"
+                else:
+                    qty_display = f"1 {unit}"
+
+            line_total = float(reservation.price_total or 0.0)
+            resources_total += line_total
+            c.drawString(2*cm, y, f"{res_name}")
+            c.drawString(10*cm, y, f"{qty_display}")
+            c.drawString(13*cm, y, f"{price_per_unit:,.2f} руб.")
+            c.drawString(16*cm, y, f"{line_total:,.2f} руб.")
+            y -= 0.6*cm
             
     # Total
     y -= 0.5*cm
     c.line(2*cm, y+0.2*cm, width-2*cm, y+0.2*cm)
     c.setFont(font_name, 12)
     c.drawString(13*cm, y-0.5*cm, "ИТОГО:")
-    c.drawString(16*cm, y-0.5*cm, f"{booking.total_price:,.2f} руб.")
+    c.drawString(16*cm, y-0.5*cm, f"{(base_price + options_total + resources_total):,.2f} руб.")
     
     # Footer
     c.setFont(font_name, 10)
@@ -1230,6 +1280,10 @@ def send_booking_info_email(booking_id, subject, header_text):
                     return
 
                 property = booking.property
+                days = (booking.check_out - booking.check_in).days
+                base_total = float(property.price_per_night or 0.0) * float(days) * float(booking.guests_count or 0)
+                options_total = 0.0
+                resources_total = 0.0
                 
                 # Options logic
                 selected_options_html = ''
@@ -1240,9 +1294,31 @@ def send_booking_info_email(booking_id, subject, header_text):
                         if item.option_type and item.option_type.unit_type:
                             unit = item.option_type.unit_type.short_name
                         price_total = item.price * item.quantity
+                        options_total += float(price_total or 0.0)
                         options_list.append(f"{item.option_name} ({item.quantity} {unit}, +{price_total:,.0f} руб.)")
                     selected_options_html = '<p><strong>Опции:</strong><br>' + '<br>'.join(options_list) + '</p>'
 
+                selected_resources_html = ''
+                reservations = [r for r in getattr(booking, 'amenity_reservations', []) if r and r.status != 'cancelled']
+                if reservations:
+                    resources_list = []
+                    for r in reservations:
+                        try:
+                            res_name = r.resource.name if r.resource else 'Ресурс'
+                        except Exception:
+                            res_name = 'Ресурс'
+                        try:
+                            start_txt = r.start_dt.strftime('%d.%m.%Y %H:%M') if r.start_dt else ''
+                            end_txt = r.end_dt.strftime('%d.%m.%Y %H:%M') if r.end_dt else ''
+                        except Exception:
+                            start_txt = ''
+                            end_txt = ''
+                        price_total = float(r.price_total or 0.0)
+                        resources_total += float(price_total or 0.0)
+                        resources_list.append(f"{res_name} ({start_txt}–{end_txt}, +{price_total:,.0f} руб., {r.status})")
+                    selected_resources_html = '<p><strong>Ресурсы:</strong><br>' + '<br>'.join(resources_list) + '</p>'
+
+                total_calc = base_total + options_total + resources_total
                 success_url = url_for('booking_success', booking_token=booking.booking_token, _external=True)
                 check_in_formatted = format_date_ru(booking.check_in)
                 check_out_formatted = format_date_ru(booking.check_out)
@@ -1262,9 +1338,10 @@ def send_booking_info_email(booking_id, subject, header_text):
                 <p><strong>Телефон:</strong> {booking.guest_phone}</p>
                 <p><strong>Даты:</strong> {check_in_formatted} - {check_out_formatted}</p>
                 <p><strong>Гостей:</strong> {booking.guests_count}</p>
-                <p><strong>Сумма:</strong> {booking.total_price:,.0f} руб.</p>
+                <p><strong>Сумма:</strong> {total_calc:,.0f} руб.</p>
                 <p><strong>Статус:</strong> {status_display}</p>
                 {selected_options_html}
+                {selected_resources_html}
                 <hr>
                 <p>Чтобы увидеть подробности, включить уведомления и Passkey на смартфоне, откройте эту ссылку: <br>
                 <a href="{success_url}">{success_url}</a></p>
@@ -3714,7 +3791,223 @@ def admin_booking_edit(booking_id):
             flash(f'Ошибка сервера: {str(e)}', 'error')
 
     properties = Property.query.order_by(Property.name).all()
-    return render_template('admin/edit_booking.html', booking=booking, properties=properties)
+    amenity_resources = AmenityResource.query.filter(
+        AmenityResource.property_id == booking.property_id
+    ).order_by(AmenityResource.is_active.desc(), AmenityResource.name.asc()).all()
+    amenity_reservations = AmenityReservation.query.filter(
+        AmenityReservation.booking_id == booking.id
+    ).order_by(AmenityReservation.start_dt.asc()).all()
+    return render_template(
+        'admin/edit_booking.html',
+        booking=booking,
+        properties=properties,
+        amenity_resources=amenity_resources,
+        amenity_reservations=amenity_reservations
+    )
+
+@app.route('/admin/bookings/edit/<int:booking_id>/amenities/add', methods=['POST'])
+@admin_required
+def admin_booking_amenity_add(booking_id):
+    user = get_current_admin()
+    booking = Booking.query.get_or_404(booking_id)
+    if not admin_can_access_property(user, booking.property):
+        flash('Недостаточно прав.', 'error')
+        return redirect(url_for('admin_booking_edit', booking_id=booking.id))
+
+    resource_id_raw = (request.form.get('resource_id') or '').strip()
+    start_raw = (request.form.get('start_dt') or '').strip()
+    end_raw = (request.form.get('end_dt') or '').strip()
+    status = (request.form.get('status') or 'requested').strip()
+    notes = (request.form.get('notes') or '').strip()
+    price_total_raw = (request.form.get('price_total') or '').strip().replace(',', '.')
+
+    if not resource_id_raw or not start_raw or not end_raw:
+        flash('Некорректные данные формы.', 'error')
+        return redirect(url_for('admin_booking_edit', booking_id=booking.id))
+
+    try:
+        resource_id = int(resource_id_raw)
+        start_dt = datetime.fromisoformat(start_raw)
+        end_dt = datetime.fromisoformat(end_raw)
+    except Exception:
+        flash('Некорректные дата/время.', 'error')
+        return redirect(url_for('admin_booking_edit', booking_id=booking.id))
+
+    resource = AmenityResource.query.get(resource_id)
+    if not resource or resource.property_id != booking.property_id:
+        flash('Ресурс недоступен для выбранного объекта.', 'error')
+        return redirect(url_for('admin_booking_edit', booking_id=booking.id))
+
+    if end_dt <= start_dt:
+        flash('Время окончания должно быть позже времени начала.', 'error')
+        return redirect(url_for('admin_booking_edit', booking_id=booking.id))
+
+    duration_minutes = int(round((end_dt - start_dt).total_seconds() / 60.0))
+    if duration_minutes <= 0 or duration_minutes % resource.slot_minutes != 0:
+        flash('Длительность услуги должна быть кратна шагу слота.', 'error')
+        return redirect(url_for('admin_booking_edit', booking_id=booking.id))
+
+    if start_dt.minute % resource.slot_minutes != 0:
+        flash('Время начала должно совпадать с шагом слота.', 'error')
+        return redirect(url_for('admin_booking_edit', booking_id=booking.id))
+
+    if start_dt.date() < booking.check_in or start_dt.date() >= booking.check_out or end_dt.date() >= booking.check_out:
+        flash('Время услуги должно быть в период проживания.', 'error')
+        return redirect(url_for('admin_booking_edit', booking_id=booking.id))
+
+    if start_dt.time() < resource.open_time or end_dt.time() > resource.close_time:
+        flash('Выбранное время выходит за часы работы ресурса.', 'error')
+        return redirect(url_for('admin_booking_edit', booking_id=booking.id))
+
+    if status != 'cancelled':
+        conflict = _find_amenity_conflict(resource, start_dt, end_dt, statuses=['requested', 'approved', 'completed'])
+        if conflict:
+            flash('Выбранное время уже занято (с учетом техперерыва).', 'error')
+            return redirect(url_for('admin_booking_edit', booking_id=booking.id))
+
+    if price_total_raw:
+        try:
+            price_total = float(price_total_raw)
+        except Exception:
+            price_total = None
+    else:
+        price_total = None
+    if price_total is None:
+        price_total = _calculate_amenity_price_total(resource, duration_minutes)
+
+    try:
+        reservation = AmenityReservation(
+            resource_id=resource.id,
+            booking_id=booking.id,
+            start_dt=start_dt,
+            end_dt=end_dt,
+            status=status,
+            price_total=price_total,
+            notes=notes
+        )
+        db.session.add(reservation)
+        db.session.commit()
+        flash('Услуга добавлена.', 'success')
+    except Exception as e:
+        db.session.rollback()
+        flash(f'Ошибка добавления услуги: {e}', 'error')
+
+    return redirect(url_for('admin_booking_edit', booking_id=booking.id))
+
+@app.route('/admin/bookings/edit/<int:booking_id>/amenities/<int:reservation_id>/update', methods=['POST'])
+@admin_required
+def admin_booking_amenity_update(booking_id, reservation_id):
+    user = get_current_admin()
+    booking = Booking.query.get_or_404(booking_id)
+    if not admin_can_access_property(user, booking.property):
+        flash('Недостаточно прав.', 'error')
+        return redirect(url_for('admin_booking_edit', booking_id=booking.id))
+
+    reservation = AmenityReservation.query.get_or_404(reservation_id)
+    if reservation.booking_id != booking.id:
+        flash('Некорректная операция.', 'error')
+        return redirect(url_for('admin_booking_edit', booking_id=booking.id))
+
+    resource_id_raw = (request.form.get('resource_id') or '').strip()
+    start_raw = (request.form.get('start_dt') or '').strip()
+    end_raw = (request.form.get('end_dt') or '').strip()
+    status = (request.form.get('status') or reservation.status).strip()
+    notes = (request.form.get('notes') or '').strip()
+    price_total_raw = (request.form.get('price_total') or '').strip().replace(',', '.')
+
+    if not resource_id_raw or not start_raw or not end_raw:
+        flash('Некорректные данные формы.', 'error')
+        return redirect(url_for('admin_booking_edit', booking_id=booking.id))
+
+    try:
+        resource_id = int(resource_id_raw)
+        start_dt = datetime.fromisoformat(start_raw)
+        end_dt = datetime.fromisoformat(end_raw)
+    except Exception:
+        flash('Некорректные дата/время.', 'error')
+        return redirect(url_for('admin_booking_edit', booking_id=booking.id))
+
+    resource = AmenityResource.query.get(resource_id)
+    if not resource or resource.property_id != booking.property_id:
+        flash('Ресурс недоступен для выбранного объекта.', 'error')
+        return redirect(url_for('admin_booking_edit', booking_id=booking.id))
+
+    if end_dt <= start_dt:
+        flash('Время окончания должно быть позже времени начала.', 'error')
+        return redirect(url_for('admin_booking_edit', booking_id=booking.id))
+
+    duration_minutes = int(round((end_dt - start_dt).total_seconds() / 60.0))
+    if duration_minutes <= 0 or duration_minutes % resource.slot_minutes != 0:
+        flash('Длительность услуги должна быть кратна шагу слота.', 'error')
+        return redirect(url_for('admin_booking_edit', booking_id=booking.id))
+
+    if start_dt.minute % resource.slot_minutes != 0:
+        flash('Время начала должно совпадать с шагом слота.', 'error')
+        return redirect(url_for('admin_booking_edit', booking_id=booking.id))
+
+    if start_dt.date() < booking.check_in or start_dt.date() >= booking.check_out or end_dt.date() >= booking.check_out:
+        flash('Время услуги должно быть в период проживания.', 'error')
+        return redirect(url_for('admin_booking_edit', booking_id=booking.id))
+
+    if start_dt.time() < resource.open_time or end_dt.time() > resource.close_time:
+        flash('Выбранное время выходит за часы работы ресурса.', 'error')
+        return redirect(url_for('admin_booking_edit', booking_id=booking.id))
+
+    if status != 'cancelled':
+        conflict = _find_amenity_conflict(resource, start_dt, end_dt, exclude_reservation_id=reservation.id, statuses=['requested', 'approved', 'completed'])
+        if conflict:
+            flash('Выбранное время уже занято (с учетом техперерыва).', 'error')
+            return redirect(url_for('admin_booking_edit', booking_id=booking.id))
+
+    if price_total_raw:
+        try:
+            price_total = float(price_total_raw)
+        except Exception:
+            price_total = None
+    else:
+        price_total = None
+    if price_total is None:
+        price_total = _calculate_amenity_price_total(resource, duration_minutes)
+
+    try:
+        reservation.resource_id = resource.id
+        reservation.start_dt = start_dt
+        reservation.end_dt = end_dt
+        reservation.status = status
+        reservation.notes = notes
+        reservation.price_total = price_total
+        reservation.updated_at = datetime.utcnow()
+        db.session.commit()
+        flash('Услуга обновлена.', 'success')
+    except Exception as e:
+        db.session.rollback()
+        flash(f'Ошибка обновления услуги: {e}', 'error')
+
+    return redirect(url_for('admin_booking_edit', booking_id=booking.id))
+
+@app.route('/admin/bookings/edit/<int:booking_id>/amenities/<int:reservation_id>/delete', methods=['POST'])
+@admin_required
+def admin_booking_amenity_delete(booking_id, reservation_id):
+    user = get_current_admin()
+    booking = Booking.query.get_or_404(booking_id)
+    if not admin_can_access_property(user, booking.property):
+        flash('Недостаточно прав.', 'error')
+        return redirect(url_for('admin_booking_edit', booking_id=booking.id))
+
+    reservation = AmenityReservation.query.get_or_404(reservation_id)
+    if reservation.booking_id != booking.id:
+        flash('Некорректная операция.', 'error')
+        return redirect(url_for('admin_booking_edit', booking_id=booking.id))
+
+    try:
+        db.session.delete(reservation)
+        db.session.commit()
+        flash('Услуга удалена.', 'success')
+    except Exception as e:
+        db.session.rollback()
+        flash(f'Ошибка удаления услуги: {e}', 'error')
+
+    return redirect(url_for('admin_booking_edit', booking_id=booking.id))
 
 @app.route('/admin/bookings/send-info/<int:booking_id>', methods=['POST'])
 @admin_required

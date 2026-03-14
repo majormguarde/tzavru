@@ -81,11 +81,24 @@
                                                     </div>
                                                     <div class="col-6">
                                                         <small class="text-muted">Сумма</small>
-                                                        <div class="fw-bold">{{ booking.total_price|format_price }} ₽</div>
+                                                        {% set nights = (booking.check_out - booking.check_in).days %}
+                                                        {% set base_total = (booking.property.price_per_night or 0) * nights * (booking.guests_count or 0) %}
+                                                        {% set ns = namespace(options_total=0, resources_total=0) %}
+                                                        {% for item in booking.selected_options %}
+                                                            {% set ns.options_total = ns.options_total + (item.price * item.quantity) %}
+                                                        {% endfor %}
+                                                        {% set amenity_reservations = reservations_by_booking.get(booking.id, []) %}
+                                                        {% for r in amenity_reservations %}
+                                                            {% if r.status != 'cancelled' %}
+                                                                {% set ns.resources_total = ns.resources_total + (r.price_total or 0) %}
+                                                            {% endif %}
+                                                        {% endfor %}
+                                                        {% set total_calc = base_total + ns.options_total + ns.resources_total %}
+                                                        <div class="fw-bold">{{ total_calc|format_price }} ₽</div>
+                                                        <div class="small text-muted">Проживание {{ base_total|format_price }} ₽ · Опции {{ ns.options_total|format_price }} ₽ · Ресурсы {{ ns.resources_total|format_price }} ₽</div>
                                                     </div>
                                                 </div>
                                                 {% set amenity_resources = resources_by_property.get(booking.property_id, []) %}
-                                                {% set amenity_reservations = reservations_by_booking.get(booking.id, []) %}
                                                 <div class="mb-3">
                                                     <button class="btn btn-outline-secondary btn-sm" type="button" data-bs-toggle="collapse" data-bs-target="#amenities{{ booking.id }}" aria-expanded="false">
                                                         <i class="bi bi-calendar2-week me-1"></i>Доп. услуги
@@ -99,6 +112,9 @@
                                                                         <div>
                                                                             <div class="fw-semibold">{{ r.resource.name }}</div>
                                                                             <div class="text-muted small">{{ r.start_dt.strftime('%d.%m.%Y %H:%M') }}–{{ r.end_dt.strftime('%H:%M') }}</div>
+                                                                            {% if r.price_total and r.price_total > 0 %}
+                                                                                <div class="text-muted small">+{{ r.price_total|format_price }} ₽</div>
+                                                                            {% endif %}
                                                                         </div>
                                                                         <div>
                                                                             {% if r.status == 'requested' %}
@@ -213,11 +229,24 @@
                                                     </div>
                                                     <div class="col-6">
                                                         <small class="text-muted">Сумма</small>
-                                                        <div class="fw-bold">{{ booking.total_price|format_price }} ₽</div>
+                                                        {% set nights = (booking.check_out - booking.check_in).days %}
+                                                        {% set base_total = (booking.property.price_per_night or 0) * nights * (booking.guests_count or 0) %}
+                                                        {% set ns = namespace(options_total=0, resources_total=0) %}
+                                                        {% for item in booking.selected_options %}
+                                                            {% set ns.options_total = ns.options_total + (item.price * item.quantity) %}
+                                                        {% endfor %}
+                                                        {% set amenity_reservations = reservations_by_booking.get(booking.id, []) %}
+                                                        {% for r in amenity_reservations %}
+                                                            {% if r.status != 'cancelled' %}
+                                                                {% set ns.resources_total = ns.resources_total + (r.price_total or 0) %}
+                                                            {% endif %}
+                                                        {% endfor %}
+                                                        {% set total_calc = base_total + ns.options_total + ns.resources_total %}
+                                                        <div class="fw-bold">{{ total_calc|format_price }} ₽</div>
+                                                        <div class="small text-muted">Проживание {{ base_total|format_price }} ₽ · Опции {{ ns.options_total|format_price }} ₽ · Ресурсы {{ ns.resources_total|format_price }} ₽</div>
                                                     </div>
                                                 </div>
                                                 {% set amenity_resources = resources_by_property.get(booking.property_id, []) %}
-                                                {% set amenity_reservations = reservations_by_booking.get(booking.id, []) %}
                                                 <div class="mb-3">
                                                     <button class="btn btn-outline-secondary btn-sm" type="button" data-bs-toggle="collapse" data-bs-target="#amenities{{ booking.id }}" aria-expanded="false">
                                                         <i class="bi bi-calendar2-week me-1"></i>Доп. услуги
@@ -231,6 +260,9 @@
                                                                         <div>
                                                                             <div class="fw-semibold">{{ r.resource.name }}</div>
                                                                             <div class="text-muted small">{{ r.start_dt.strftime('%d.%m.%Y %H:%M') }}–{{ r.end_dt.strftime('%H:%M') }}</div>
+                                                                            {% if r.price_total and r.price_total > 0 %}
+                                                                                <div class="text-muted small">+{{ r.price_total|format_price }} ₽</div>
+                                                                            {% endif %}
                                                                         </div>
                                                                         <div>
                                                                             {% if r.status == 'requested' %}
