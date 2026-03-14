@@ -13,9 +13,318 @@
                 </ol>
             </nav>
             
-            <h1 class="mb-4">Мои заявки и бронирования</h1>
-            
-            {% if not pending_bookings and not confirmed_bookings and not cancelled_bookings %}
+            <h1 class="mb-4">{% if single_booking %}Моя заявка{% else %}Мои заявки и бронирования{% endif %}</h1>
+
+            {% if single_booking %}
+                <div class="row justify-content-center">
+                    <div class="col-12 col-lg-8">
+                        <div class="card border-0 shadow-sm mb-4">
+                            <div class="card-body p-4">
+                                <h2 class="h5 mb-2">
+                                    {% if single_booking.status == 'pending' %}
+                                        Заявка создана
+                                    {% elif single_booking.status == 'confirmed' %}
+                                        Бронирование подтверждено
+                                    {% elif single_booking.status == 'cancelled' %}
+                                        Бронирование отменено
+                                    {% else %}
+                                        Бронирование #{{ single_booking.id }}
+                                    {% endif %}
+                                </h2>
+                                <div class="text-muted mb-4">
+                                    {% if single_booking.status == 'pending' %}
+                                        Ваша заявка принята. Пожалуйста, подтвердите email для завершения бронирования.
+                                    {% elif single_booking.status == 'cancelled' %}
+                                        Это бронирование отменено.
+                                    {% else %}
+                                        Бронирование успешно подтверждено. Мы ждем вас!
+                                    {% endif %}
+                                </div>
+
+                                {% if single_booking.booking_token %}
+                                    {% set booking_link = url_for('my_bookings', booking_token=single_booking.booking_token, _external=True) %}
+                                    <div class="border rounded p-3 mb-4">
+                                        <div class="fw-semibold mb-2">Ссылка для открытия на смартфоне</div>
+                                        <div class="text-muted small mb-2">Сохраните эту ссылку, чтобы вернуться к деталям заявки.</div>
+                                        <div class="d-flex gap-2 align-items-start">
+                                            <code class="flex-grow-1 text-break">{{ booking_link }}</code>
+                                            <button id="btn-copy-link" class="btn btn-outline-secondary btn-sm" type="button" data-copy="{{ booking_link }}">Копировать</button>
+                                        </div>
+                                        <div id="copy-status" class="small text-muted mt-2"></div>
+                                    </div>
+                                {% endif %}
+
+                                {% set nights = (single_booking.check_out - single_booking.check_in).days %}
+                                {% set base_total = (single_booking.property.price_per_night or 0) * nights * single_booking.guests_count %}
+                                {% set ns = namespace(options_total=0, resources_total=0) %}
+                                {% for item in single_booking.selected_options %}
+                                    {% set ns.options_total = ns.options_total + (item.price * item.quantity) %}
+                                {% endfor %}
+                                {% set amenity_reservations = reservations_by_booking.get(single_booking.id, []) %}
+                                {% for r in amenity_reservations %}
+                                    {% if r.status != 'cancelled' %}
+                                        {% set ns.resources_total = ns.resources_total + (r.price_total or 0) %}
+                                    {% endif %}
+                                {% endfor %}
+                                {% set calc_total = base_total + ns.options_total + ns.resources_total %}
+
+                                <div class="row g-3 mb-4">
+                                    <div class="col-12 col-md-6">
+                                        <div class="border rounded p-3 h-100">
+                                            <div class="fw-semibold mb-2">Детали</div>
+                                            <div class="small text-muted">
+                                                <div class="mb-1"><span class="text-dark">Объект:</span> {{ single_booking.property.name }}</div>
+                                                <div class="mb-1"><span class="text-dark">Даты:</span> {{ single_booking.check_in.strftime('%d.%m.%Y') }} – {{ single_booking.check_out.strftime('%d.%m.%Y') }}</div>
+                                                <div class="mb-1"><span class="text-dark">Гостей:</span> {{ single_booking.guests_count }}</div>
+                                                <div class="mb-1"><span class="text-dark">Проживание:</span> {{ base_total|format_price }} ₽</div>
+                                                <div class="mb-1"><span class="text-dark">Опции:</span> {{ ns.options_total|format_price }} ₽</div>
+                                                <div class="mb-1"><span class="text-dark">Ресурсы:</span> {{ ns.resources_total|format_price }} ₽</div>
+                                                <div class="mb-0"><span class="text-dark">Итого:</span> {{ calc_total|format_price }} ₽</div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="col-12 col-md-6">
+                                        <div class="border rounded p-3 h-100 text-center">
+                                            <div class="fw-semibold mb-2">Заявка (PDF)</div>
+                                            <div class="text-muted small mb-3">Распечатать или сохранить детали заявки.</div>
+                                            <button id="btn-print" class="btn btn-outline-secondary px-5" type="button">Распечатать заявку</button>
+                                            <div class="small text-muted mt-2">&nbsp;</div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div id="cancel-section" class="{{ 'd-none' if single_booking.status == 'cancelled' }}">
+                                    <div class="mb-2">
+                                        <label for="cancel-reason" class="form-label small text-muted">Причина отмены (необязательно)</label>
+                                        <textarea id="cancel-reason" class="form-control form-control-sm" rows="2" placeholder="Например: изменились планы"></textarea>
+                                    </div>
+                                    <button id="btn-cancel" class="btn btn-outline-danger btn-sm w-100" type="button">
+                                        <i class="bi bi-x-circle me-1"></i> Отменить бронирование
+                                    </button>
+                                    <div id="cancel-status" class="small text-muted mt-1 text-center"></div>
+                                </div>
+
+                                <div id="cancelled-badge" class="alert alert-danger mt-3 {{ 'd-none' if single_booking.status != 'cancelled' }}" role="alert">
+                                    <i class="bi bi-x-circle me-2"></i> Бронирование отменено.
+                                </div>
+
+                                <div class="d-flex gap-2 mt-4">
+                                    {% if public_view %}
+                                        <a class="btn btn-primary flex-grow-1" href="{{ url_for('public_login') }}">Войти в личный кабинет</a>
+                                    {% else %}
+                                        <a class="btn btn-primary flex-grow-1" href="{{ url_for('my_bookings') }}">Перейти к моим заявкам</a>
+                                    {% endif %}
+                                    <a class="btn btn-outline-secondary" href="{{ url_for('property_detail', id=single_booking.property.id) }}">К объекту</a>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <script>
+                (function() {
+                    var bookingToken = "{{ single_booking.booking_token }}";
+                    var copyBtn = document.getElementById('btn-copy-link');
+                    var copyStatus = document.getElementById('copy-status');
+                    var printBtn = document.getElementById('btn-print');
+                    var cancelBtn = document.getElementById('btn-cancel');
+                    var cancelStatus = document.getElementById('cancel-status');
+                    var cancelReasonInput = document.getElementById('cancel-reason');
+                    var cancelSection = document.getElementById('cancel-section');
+                    var cancelledBadge = document.getElementById('cancelled-badge');
+
+                    var bookingData = {
+                        propertyName: {{ single_booking.property.name|tojson }},
+                        propertyLocation: {{ single_booking.property.location|tojson }},
+                        propertyLatitude: {{ single_booking.property.latitude|tojson }},
+                        propertyLongitude: {{ single_booking.property.longitude|tojson }},
+                        checkIn: "{{ single_booking.check_in.strftime('%d.%m.%Y') }}",
+                        checkOut: "{{ single_booking.check_out.strftime('%d.%m.%Y') }}",
+                        guestName: {{ single_booking.guest_name|tojson }},
+                        guestPhone: {{ single_booking.guest_phone|tojson }},
+                        guestEmail: {{ single_booking.guest_email|tojson }},
+                        guestsCount: {{ single_booking.guests_count }},
+                        options: [
+                            {% for item in single_booking.selected_options %}
+                            { name: {{ item.option_name|tojson }}, qty: {{ item.quantity }}, pricePerUnit: {{ item.price }}, lineTotal: {{ item.price * item.quantity }} },
+                            {% endfor %}
+                        ],
+                        resources: [
+                            {% for ar in amenity_reservations if ar.status != 'cancelled' %}
+                            {
+                                name: {{ (ar.resource.name if ar.resource else 'Ресурс')|tojson }},
+                                start: {{ (ar.start_dt.strftime('%d.%m.%Y %H:%M') if ar.start_dt else '')|tojson }},
+                                end: {{ (ar.end_dt.strftime('%d.%m.%Y %H:%M') if ar.end_dt else '')|tojson }},
+                                priceTotal: {{ (ar.price_total or 0) }},
+                                status: {{ ar.status|tojson }}
+                            },
+                            {% endfor %}
+                        ],
+                        baseTotal: {{ base_total }},
+                        optionsTotal: {{ ns.options_total }},
+                        resourcesTotal: {{ ns.resources_total }},
+                        totalPrice: {{ calc_total }},
+                        createdAt: "{{ single_booking.created_at.strftime('%d.%m.%Y %H:%M') if single_booking.created_at else '' }}",
+                        bookingId: {{ single_booking.id }}
+                    };
+
+                    function setStatus(el, msg, isError) {
+                        if (!el) return;
+                        el.textContent = msg || '';
+                        el.classList.toggle('text-danger', !!isError);
+                        el.classList.toggle('text-muted', !isError);
+                    }
+
+                    async function copyText(text) {
+                        if (navigator.clipboard && navigator.clipboard.writeText) {
+                            await navigator.clipboard.writeText(text);
+                            return;
+                        }
+                        var ta = document.createElement('textarea');
+                        ta.value = text;
+                        ta.style.position = 'fixed';
+                        ta.style.left = '-9999px';
+                        document.body.appendChild(ta);
+                        ta.focus();
+                        ta.select();
+                        document.execCommand('copy');
+                        document.body.removeChild(ta);
+                    }
+
+                    if (copyBtn) {
+                        copyBtn.addEventListener('click', async function() {
+                            try {
+                                await copyText(copyBtn.dataset.copy || window.location.href);
+                                setStatus(copyStatus, 'Ссылка скопирована.', false);
+                            } catch (e) {
+                                setStatus(copyStatus, 'Не удалось скопировать ссылку.', true);
+                            }
+                        });
+                    }
+
+                    if (printBtn) {
+                        printBtn.addEventListener('click', function() {
+                            var data = bookingData;
+                            var optionsRows = data.options.length
+                                ? data.options.map(function(item) { return `<tr><td>${item.name}</td><td>${item.qty}</td><td>${Number(item.pricePerUnit).toLocaleString('ru-RU')} ₽</td><td>${Number(item.lineTotal).toLocaleString('ru-RU')} ₽</td></tr>`; }).join('')
+                                : '<tr><td colspan="4" style="text-align:center;color:#666;">Опции не выбраны</td></tr>';
+                            var resourcesRows = data.resources.length
+                                ? data.resources.map(function(item) { return `<tr><td>${item.name}</td><td>${item.start} – ${item.end}</td><td style="text-align:right;">${Number(item.priceTotal).toLocaleString('ru-RU')} ₽</td></tr>`; }).join('')
+                                : '<tr><td colspan="3" style="text-align:center;color:#666;">Ресурсы не выбраны</td></tr>';
+                            var hasCoords = data.propertyLatitude !== null && data.propertyLatitude !== undefined && data.propertyLatitude !== '' && data.propertyLongitude !== null && data.propertyLongitude !== undefined && data.propertyLongitude !== '';
+                            var lat = hasCoords ? Number(data.propertyLatitude) : null;
+                            var lon = hasCoords ? Number(data.propertyLongitude) : null;
+                            var mapUrl = hasCoords ? `https://staticmap.openstreetmap.de/staticmap.php?center=${encodeURIComponent(lat + ',' + lon)}&zoom=15&size=900x320&maptype=mapnik&markers=${encodeURIComponent(lat + ',' + lon + ',red-pushpin')}` : '';
+                            var mapLink = hasCoords ? `https://www.openstreetmap.org/?mlat=${encodeURIComponent(lat)}&mlon=${encodeURIComponent(lon)}#map=15/${encodeURIComponent(lat)}/${encodeURIComponent(lon)}` : '';
+
+                            var printWindow = window.open('', '_blank', 'width=980,height=760');
+                            if (!printWindow) return;
+
+                            var html = `
+                                <!doctype html>
+                                <html lang="ru">
+                                <head>
+                                    <meta charset="utf-8">
+                                    <title>Заявка на бронирование #${data.bookingId}</title>
+                                    <style>
+                                        body { font-family: Arial, sans-serif; margin: 20px; color: #222; }
+                                        h1 { margin: 0 0 12px; font-size: 24px; }
+                                        .meta { margin-bottom: 14px; line-height: 1.45; }
+                                        .label { font-weight: 700; }
+                                        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+                                        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; font-size: 14px; }
+                                        th { background: #f3f3f3; }
+                                        .total { margin-top: 12px; text-align: right; font-size: 16px; font-weight: 700; }
+                                        .section-title { margin-top: 16px; font-weight: 700; }
+                                        .map { margin-top: 14px; }
+                                    </style>
+                                </head>
+                                <body>
+                                    <h1>Заявка на бронирование #${data.bookingId}</h1>
+                                    <div class="meta">
+                                        <div><span class="label">Объект:</span> ${data.propertyName}</div>
+                                        <div><span class="label">Локация:</span> ${data.propertyLocation}</div>
+                                        <div><span class="label">Дата заявки:</span> ${data.createdAt}</div>
+                                        <div><span class="label">Заезд:</span> ${data.checkIn}</div>
+                                        <div><span class="label">Выезд:</span> ${data.checkOut}</div>
+                                        <div><span class="label">Гостей:</span> ${data.guestsCount}</div>
+                                        <div><span class="label">Гость:</span> ${data.guestName}</div>
+                                        <div><span class="label">Телефон:</span> ${data.guestPhone}</div>
+                                        <div><span class="label">Email:</span> ${data.guestEmail}</div>
+                                        ${hasCoords ? `<div><span class="label">Координаты:</span> ${lat}, ${lon} • <a href="${mapLink}" target="_blank" rel="noreferrer">Открыть карту</a></div>` : ``}
+                                    </div>
+                                    ${hasCoords ? `<div class="map"><img src="${mapUrl}" alt="Карта" style="max-width:100%;height:auto;border:1px solid #ddd;"></div>` : ``}
+                                    <div class="section-title">Опции</div>
+                                    <table>
+                                        <thead>
+                                            <tr><th>Опция</th><th>Кол-во</th><th>Тариф</th><th>Стоимость</th></tr>
+                                        </thead>
+                                        <tbody>${optionsRows}</tbody>
+                                    </table>
+                                    <div class="section-title">Ресурсы</div>
+                                    <table>
+                                        <thead>
+                                            <tr><th>Ресурс</th><th>Период</th><th style="text-align:right;">Стоимость</th></tr>
+                                        </thead>
+                                        <tbody>${resourcesRows}</tbody>
+                                    </table>
+                                    <div class="total">
+                                        Проживание: ${Number(data.baseTotal).toLocaleString('ru-RU')} ₽<br>
+                                        Опции: ${Number(data.optionsTotal).toLocaleString('ru-RU')} ₽<br>
+                                        Ресурсы: ${Number(data.resourcesTotal).toLocaleString('ru-RU')} ₽<br>
+                                        ИТОГО к оплате: ${Number(data.totalPrice).toLocaleString('ru-RU')} ₽
+                                    </div>
+                                </body>
+                                </html>
+                            `;
+
+                            printWindow.document.open();
+                            printWindow.document.write(html);
+                            printWindow.document.close();
+                            printWindow.focus();
+                            printWindow.print();
+                        });
+                    }
+
+                    function handleCancellationUI() {
+                        if (cancelSection) cancelSection.classList.add('d-none');
+                        if (cancelledBadge) cancelledBadge.classList.remove('d-none');
+                        if (printBtn) printBtn.disabled = true;
+                        if (copyBtn) copyBtn.disabled = true;
+                    }
+
+                    {% if single_booking.status == 'cancelled' %}
+                    window.addEventListener('DOMContentLoaded', handleCancellationUI);
+                    {% endif %}
+
+                    if (cancelBtn) {
+                        cancelBtn.addEventListener('click', async function() {
+                            if (!confirm('Вы уверены, что хотите отменить это бронирование?')) return;
+                            setStatus(cancelStatus, 'Отправляем запрос...', false);
+                            try {
+                                var resp = await fetch('/api/booking/cancel', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({
+                                        booking_token: bookingToken,
+                                        cancel_reason: (cancelReasonInput && cancelReasonInput.value ? cancelReasonInput.value : '')
+                                    })
+                                });
+                                var json = await resp.json().catch(function() { return null; });
+                                if (!resp.ok || !json || json.status !== 'ok') {
+                                    setStatus(cancelStatus, (json && json.error) ? json.error : 'Не удалось отменить бронирование.', true);
+                                    return;
+                                }
+                                setStatus(cancelStatus, 'Бронирование отменено.', false);
+                                handleCancellationUI();
+                            } catch (e) {
+                                setStatus(cancelStatus, 'Ошибка сети. Попробуйте позже.', true);
+                            }
+                        });
+                    }
+                })();
+                </script>
+            {% elif not pending_bookings and not confirmed_bookings and not cancelled_bookings %}
                 <div class="text-center py-5">
                     <i class="bi bi-inbox fs-1 text-muted d-block mb-3"></i>
                     <h5 class="text-muted">У вас пока нет заявок</h5>
@@ -134,7 +443,7 @@
                                                             </div>
                                                         {% endif %}
 
-                                                        {% if amenity_resources %}
+                                                        {% if amenity_resources and not public_view %}
                                                             <form method="POST" action="{{ url_for('request_amenity', booking_token=booking.booking_token) }}" class="row g-2">
                                                                 <div class="col-12">
                                                                     <div class="fw-semibold mb-1">Заказать услугу</div>
@@ -176,7 +485,7 @@
                                                     </div>
                                                 </div>
                                                 <div class="d-flex gap-2">
-                                                    <a href="{{ url_for('booking_success', booking_token=booking.booking_token) }}" class="btn btn-outline-primary btn-sm">
+                                                    <a href="{{ url_for('my_bookings', booking_token=booking.booking_token) }}" class="btn btn-outline-primary btn-sm">
                                                         <i class="bi bi-eye me-1"></i>Подробнее
                                                     </a>
                                                     <button class="btn btn-outline-danger btn-sm" onclick="cancelBooking('{{ booking.booking_token }}')">
@@ -282,7 +591,7 @@
                                                             </div>
                                                         {% endif %}
 
-                                                        {% if amenity_resources %}
+                                                        {% if amenity_resources and not public_view %}
                                                             <form method="POST" action="{{ url_for('request_amenity', booking_token=booking.booking_token) }}" class="row g-2">
                                                                 <div class="col-12">
                                                                     <div class="fw-semibold mb-1">Заказать услугу</div>
@@ -324,7 +633,7 @@
                                                     </div>
                                                 </div>
                                                 <div class="d-flex gap-2">
-                                                    <a href="{{ url_for('booking_success', booking_token=booking.booking_token) }}" class="btn btn-outline-primary btn-sm">
+                                                    <a href="{{ url_for('my_bookings', booking_token=booking.booking_token) }}" class="btn btn-outline-primary btn-sm">
                                                         <i class="bi bi-eye me-1"></i>Подробнее
                                                     </a>
                                                     <button class="btn btn-outline-danger btn-sm" onclick="cancelBooking('{{ booking.booking_token }}')">
@@ -389,7 +698,7 @@
                                                     </div>
                                                 {% endif %}
                                                 <div class="d-flex gap-2">
-                                                    <a href="{{ url_for('booking_success', booking_token=booking.booking_token) }}" class="btn btn-outline-primary btn-sm">
+                                                    <a href="{{ url_for('my_bookings', booking_token=booking.booking_token) }}" class="btn btn-outline-primary btn-sm">
                                                         <i class="bi bi-eye me-1"></i>Подробнее
                                                     </a>
                                                 </div>

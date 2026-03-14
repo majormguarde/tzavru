@@ -501,7 +501,7 @@ def notify_booking_devices(booking_id, title, body, icon='/static/icons/icon-192
                 'title': title,
                 'body': body,
                 'icon': icon,
-                'url': url or url_for('booking_success', booking_token=device.booking.booking_token, _external=True)
+                'url': url or url_for('my_bookings', booking_token=device.booking.booking_token, _external=True)
             }
             
             res = send_webpush_notification(sub_info, payload)
@@ -1319,7 +1319,7 @@ def send_booking_info_email(booking_id, subject, header_text):
                     selected_resources_html = '<p><strong>Ресурсы:</strong><br>' + '<br>'.join(resources_list) + '</p>'
 
                 total_calc = base_total + options_total + resources_total
-                success_url = url_for('booking_success', booking_token=booking.booking_token, _external=True)
+                success_url = url_for('my_bookings', booking_token=booking.booking_token, _external=True)
                 check_in_formatted = format_date_ru(booking.check_in)
                 check_out_formatted = format_date_ru(booking.check_out)
 
@@ -1343,7 +1343,7 @@ def send_booking_info_email(booking_id, subject, header_text):
                 {selected_options_html}
                 {selected_resources_html}
                 <hr>
-                <p>Чтобы увидеть подробности, включить уведомления и Passkey на смартфоне, откройте эту ссылку: <br>
+                <p>Чтобы увидеть подробности заявки на смартфоне, откройте эту ссылку: <br>
                 <a href="{success_url}">{success_url}</a></p>
                 """
 
@@ -2066,6 +2066,7 @@ def booking(property_id):
                     selected_options_html = '<p><strong>Опции:</strong><br>' + '<br>'.join(options_list) + '</p>'
                 check_in_formatted = format_date_ru(booking.check_in)
                 check_out_formatted = format_date_ru(booking.check_out)
+                success_url = url_for('my_bookings', booking_token=booking.booking_token, _external=True)
                 
                 settings = SiteSettings.query.first()
                 system_email = settings.email_info if settings else "info@imperial-collection.ru"
@@ -2183,11 +2184,11 @@ def booking(property_id):
                     'status': 'success',
                     'message': msg,
                     'booking_token': booking.booking_token,
-                    'success_url': url_for('booking_success', booking_token=booking.booking_token)
+                    'success_url': url_for('my_bookings', booking_token=booking.booking_token)
                 })
                 
             flash(msg, 'success')
-            return redirect(url_for('booking_success', booking_token=booking.booking_token))
+            return redirect(url_for('my_bookings', booking_token=booking.booking_token))
             
         except ValueError:
             msg = 'Неверный формат даты'
@@ -2204,8 +2205,7 @@ def booking(property_id):
 
 @app.route('/booking/success/<booking_token>', endpoint='booking_success')
 def booking_success(booking_token):
-    booking = Booking.query.filter_by(booking_token=booking_token).first_or_404()
-    return render_template('booking_success.html', booking=booking)
+    return redirect(url_for('my_bookings', booking_token=booking_token))
 
 @app.route('/confirm-booking/<booking_token>')
 def confirm_booking(booking_token):
@@ -2215,7 +2215,7 @@ def confirm_booking(booking_token):
     # Проверяем, не подтверждено ли уже бронирование
     if booking.is_email_confirmed:
         flash('Бронирование уже подтверждено ранее.', 'info')
-        return redirect(url_for('booking_success', booking_token=booking_token))
+        return redirect(url_for('my_bookings', booking_token=booking_token))
     
     # Обновляем статус подтверждения
     booking.is_email_confirmed = True
@@ -2238,23 +2238,29 @@ def confirm_booking(booking_token):
         print(f"Error sending final confirmation email: {e}")
     
     flash('Бронирование успешно подтверждено! Спасибо за подтверждение.', 'success')
-    return redirect(url_for('booking_success', booking_token=booking_token))
+    return redirect(url_for('my_bookings', booking_token=booking_token))
 
 @app.route('/my-bookings')
-@login_required
 def my_bookings():
-    """Страница 'Мои заявки' для авторизованных пользователей"""
-    if 'user_id' not in session:
-        flash('Для просмотра заявок необходимо войти в систему', 'warning')
-        return redirect(url_for('public_login'))
-    
-    # Получаем email текущего пользователя
-    current_user = User.query.get(session['user_id'])
-    if not current_user:
-        flash('Пользователь не найден', 'error')
-        return redirect(url_for('public_login'))
-    
-    user_bookings = Booking.query.filter_by(guest_email=current_user.email).order_by(Booking.created_at.desc()).all()
+    """Страница 'Мои заявки'. Для гостей может открываться по booking_token."""
+    booking_token = (request.args.get('booking_token') or '').strip()
+
+    if booking_token:
+        booking = Booking.query.filter_by(booking_token=booking_token).first_or_404()
+        user_bookings = [booking]
+        public_view = 'user_id' not in session
+    else:
+        public_view = False
+        if 'user_id' not in session:
+            flash('Для просмотра заявок необходимо войти в систему', 'warning')
+            return redirect(url_for('public_login'))
+        
+        current_user = User.query.get(session['user_id'])
+        if not current_user:
+            flash('Пользователь не найден', 'error')
+            return redirect(url_for('public_login'))
+        
+        user_bookings = Booking.query.filter_by(guest_email=current_user.email).order_by(Booking.created_at.desc()).all()
     
     # Разделяем на заявки и бронирования
     pending_bookings = [b for b in user_bookings if b.status == 'pending']
@@ -2301,7 +2307,9 @@ def my_bookings():
                          resources_by_property=resources_by_property,
                          reservations_by_booking=reservations_by_booking,
                          booking_date_bounds=booking_date_bounds,
-                         time_options=time_options)
+                         time_options=time_options,
+                         single_booking=(user_bookings[0] if booking_token and user_bookings else None),
+                         public_view=public_view)
 
 def _find_amenity_conflict(resource, start_dt, end_dt, exclude_reservation_id=None, statuses=None):
     statuses = statuses or ['requested', 'approved', 'completed']
@@ -3797,12 +3805,22 @@ def admin_booking_edit(booking_id):
     amenity_reservations = AmenityReservation.query.filter(
         AmenityReservation.booking_id == booking.id
     ).order_by(AmenityReservation.start_dt.asc()).all()
+    time_options = []
+    for h in range(0, 24):
+        for m in (0, 30):
+            time_options.append(f'{h:02d}:{m:02d}')
+    booking_date_bounds = {
+        'min': booking.check_in.strftime('%Y-%m-%d'),
+        'max': (booking.check_out - timedelta(days=1)).strftime('%Y-%m-%d') if booking.check_out else ''
+    }
     return render_template(
         'admin/edit_booking.html',
         booking=booking,
         properties=properties,
         amenity_resources=amenity_resources,
-        amenity_reservations=amenity_reservations
+        amenity_reservations=amenity_reservations,
+        time_options=time_options,
+        booking_date_bounds=booking_date_bounds
     )
 
 @app.route('/admin/bookings/edit/<int:booking_id>/amenities/add', methods=['POST'])
@@ -3815,20 +3833,30 @@ def admin_booking_amenity_add(booking_id):
         return redirect(url_for('admin_booking_edit', booking_id=booking.id))
 
     resource_id_raw = (request.form.get('resource_id') or '').strip()
+    date_str = (request.form.get('date') or '').strip()
+    time_str = (request.form.get('time') or '').strip()
+    duration_hours_raw = (request.form.get('duration_hours') or '').strip().replace(',', '.')
     start_raw = (request.form.get('start_dt') or '').strip()
     end_raw = (request.form.get('end_dt') or '').strip()
     status = (request.form.get('status') or 'requested').strip()
     notes = (request.form.get('notes') or '').strip()
     price_total_raw = (request.form.get('price_total') or '').strip().replace(',', '.')
 
-    if not resource_id_raw or not start_raw or not end_raw:
+    if not resource_id_raw:
         flash('Некорректные данные формы.', 'error')
         return redirect(url_for('admin_booking_edit', booking_id=booking.id))
 
     try:
         resource_id = int(resource_id_raw)
-        start_dt = datetime.fromisoformat(start_raw)
-        end_dt = datetime.fromisoformat(end_raw)
+        if start_raw:
+            start_dt = datetime.fromisoformat(start_raw)
+        else:
+            start_dt = datetime.strptime(f'{date_str} {time_str}', '%Y-%m-%d %H:%M')
+        if end_raw:
+            end_dt = datetime.fromisoformat(end_raw)
+        else:
+            duration_minutes = int(round(float(duration_hours_raw) * 60))
+            end_dt = start_dt + timedelta(minutes=duration_minutes)
     except Exception:
         flash('Некорректные дата/время.', 'error')
         return redirect(url_for('admin_booking_edit', booking_id=booking.id))
@@ -3840,6 +3868,10 @@ def admin_booking_amenity_add(booking_id):
 
     if end_dt <= start_dt:
         flash('Время окончания должно быть позже времени начала.', 'error')
+        return redirect(url_for('admin_booking_edit', booking_id=booking.id))
+
+    if end_dt.date() != start_dt.date():
+        flash('Услуга должна быть в пределах одного дня.', 'error')
         return redirect(url_for('admin_booking_edit', booking_id=booking.id))
 
     duration_minutes = int(round((end_dt - start_dt).total_seconds() / 60.0))
@@ -3909,20 +3941,30 @@ def admin_booking_amenity_update(booking_id, reservation_id):
         return redirect(url_for('admin_booking_edit', booking_id=booking.id))
 
     resource_id_raw = (request.form.get('resource_id') or '').strip()
+    date_str = (request.form.get('date') or '').strip()
+    time_str = (request.form.get('time') or '').strip()
+    duration_hours_raw = (request.form.get('duration_hours') or '').strip().replace(',', '.')
     start_raw = (request.form.get('start_dt') or '').strip()
     end_raw = (request.form.get('end_dt') or '').strip()
     status = (request.form.get('status') or reservation.status).strip()
     notes = (request.form.get('notes') or '').strip()
     price_total_raw = (request.form.get('price_total') or '').strip().replace(',', '.')
 
-    if not resource_id_raw or not start_raw or not end_raw:
+    if not resource_id_raw:
         flash('Некорректные данные формы.', 'error')
         return redirect(url_for('admin_booking_edit', booking_id=booking.id))
 
     try:
         resource_id = int(resource_id_raw)
-        start_dt = datetime.fromisoformat(start_raw)
-        end_dt = datetime.fromisoformat(end_raw)
+        if start_raw:
+            start_dt = datetime.fromisoformat(start_raw)
+        else:
+            start_dt = datetime.strptime(f'{date_str} {time_str}', '%Y-%m-%d %H:%M')
+        if end_raw:
+            end_dt = datetime.fromisoformat(end_raw)
+        else:
+            duration_minutes = int(round(float(duration_hours_raw) * 60))
+            end_dt = start_dt + timedelta(minutes=duration_minutes)
     except Exception:
         flash('Некорректные дата/время.', 'error')
         return redirect(url_for('admin_booking_edit', booking_id=booking.id))
@@ -3934,6 +3976,10 @@ def admin_booking_amenity_update(booking_id, reservation_id):
 
     if end_dt <= start_dt:
         flash('Время окончания должно быть позже времени начала.', 'error')
+        return redirect(url_for('admin_booking_edit', booking_id=booking.id))
+
+    if end_dt.date() != start_dt.date():
+        flash('Услуга должна быть в пределах одного дня.', 'error')
         return redirect(url_for('admin_booking_edit', booking_id=booking.id))
 
     duration_minutes = int(round((end_dt - start_dt).total_seconds() / 60.0))
