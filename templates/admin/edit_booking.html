@@ -505,13 +505,14 @@
         return String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0');
     }
 
-    function setConstraintsText(open, close, slot) {
+    function setConstraintsText(open, close, slot, note) {
         if (!constraintsEl) return;
         if (!open || !close || !slot) {
             constraintsEl.textContent = '';
             return;
         }
-        constraintsEl.textContent = 'Часы: ' + open + '–' + close + ' • шаг: ' + slot + ' мин.';
+        var base = 'Часы: ' + open + '–' + close + ' • шаг: ' + slot + ' мин.';
+        constraintsEl.textContent = note ? (base + ' • ' + note) : base;
     }
 
     function roundToStep(value, step) {
@@ -544,7 +545,7 @@
             timeSelect.appendChild(opt);
             timeSelect.value = '';
             timeSelect.disabled = true;
-            return;
+            return false;
         }
 
         timeSelect.disabled = false;
@@ -558,6 +559,7 @@
 
         var canKeep = Array.from(timeSelect.options).some(function(o) { return o.value === selected; });
         timeSelect.value = canKeep ? selected : (timeSelect.options[0] ? timeSelect.options[0].value : '');
+        return true;
     }
 
     function applyResourceConstraints() {
@@ -570,7 +572,6 @@
         if (!Number.isFinite(slotMinutes) || slotMinutes <= 0) slotMinutes = 30;
 
         updateDurationStep(slotMinutes);
-        setConstraintsText(open, close, slotMinutes);
 
         var parsedOpen = parseHHMM(open);
         var parsedClose = parseHHMM(close);
@@ -578,7 +579,9 @@
         var closeMin = (parsedClose !== null && parsedClose !== undefined) ? parsedClose : (23 * 60 + 59);
         var durationMinutes = Math.max(slotMinutes, Math.round(Number(durationInput.value || 0) * 60));
 
-        rebuildTimeOptions(openMin, closeMin, slotMinutes, durationMinutes);
+        var ok = rebuildTimeOptions(openMin, closeMin, slotMinutes, durationMinutes);
+        var note = ok ? null : ('длительность ' + durationMinutes + ' мин. не помещается в часы работы');
+        setConstraintsText(open, close, slotMinutes, note);
     }
 
     resourceSelect.addEventListener('change', applyResourceConstraints);
