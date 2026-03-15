@@ -7,6 +7,7 @@ import calendar
 from config import Config
 import json
 import os
+import sys
 import base64
 import hashlib
 import secrets
@@ -5686,7 +5687,9 @@ def background_scheduler():
         time.sleep(600)  # Check every 10 minutes
 
 # Start background scheduler if running in main process (reloader or production)
-if os.environ.get('WERKZEUG_RUN_MAIN') == 'true' or not app.debug:
+# And not running database migrations
+is_flask_db = 'db' in sys.argv or 'migrate' in sys.argv or 'upgrade' in sys.argv
+if (os.environ.get('WERKZEUG_RUN_MAIN') == 'true' or not app.debug) and not is_flask_db:
     threading.Thread(target=background_scheduler, daemon=True).start()
 
 
