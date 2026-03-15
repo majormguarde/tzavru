@@ -2,6 +2,64 @@
 
 {% block page_title %}Управление объектами{% endblock %}
 
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const sortableTable = document.getElementById('sortable-properties');
+    if (sortableTable) {
+        new Sortable(sortableTable, {
+            animation: 150,
+            handle: '.drag-handle',
+            onEnd: function(evt) {
+                // Get the new order
+                const rows = sortableTable.querySelectorAll('tr[data-property-id]');
+                const order = Array.from(rows).map(row => row.dataset.propertyId);
+                
+                // Send the new order to the server
+                fetch('/admin/properties/reorder', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ order: order })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        // Show success message
+                        showToast('Порядок объектов сохранен', 'success');
+                    } else {
+                        // Show error message
+                        showToast('Ошибка при сохранении порядка', 'error');
+                        // Revert the change
+                        location.reload();
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    showToast('Ошибка при сохранении порядка', 'error');
+                    location.reload();
+                });
+            }
+        });
+    }
+    
+    // Simple toast notification function
+    function showToast(message, type) {
+        const toast = document.createElement('div');
+        toast.className = `alert alert-${type === 'success' ? 'success' : 'danger'} position-fixed`;
+        toast.style.cssText = 'top: 20px; right: 20px; z-index: 9999; min-width: 250px;';
+        toast.innerHTML = message;
+        document.body.appendChild(toast);
+        
+        setTimeout(() => {
+            toast.remove();
+        }, 3000);
+    }
+});
+</script>
+{% endblock %}
+
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4">
     <div>
@@ -20,6 +78,7 @@
             <table class="table table-hover align-middle mb-0">
                 <thead class="table-light">
                     <tr>
+                        <th style="width: 30px;"></th>
                         <th style="width: 80px;">Фото</th>
                         <th>Название</th>
                         <th>Тип</th>
@@ -30,9 +89,12 @@
                         <th class="text-end">Действия</th>
                     </tr>
                 </thead>
-                <tbody>
+                <tbody id="sortable-properties">
                     {% for property in properties %}
-                    <tr>
+                    <tr data-property-id="{{ property.id }}" style="cursor: move;">
+                        <td class="drag-handle text-muted" style="width: 30px; text-align: center;">
+                            <i class="bi bi-grip-vertical"></i>
+                        </td>
                         <td>
                             <div class="d-flex flex-wrap gap-1 align-items-center" style="max-width: 200px;">
                                 {% if property.image_url %}
@@ -65,7 +127,6 @@
                                 -
                             {% endif %}
                         </td>
-                        <td>{{ property.location }}</td>
                         <td>{{ property.price_per_night|format_price }} ₽</td>
                         <td>до {{ property.capacity }} чел. (база: {{ property.base_guests }})</td>
                         <td>
@@ -101,7 +162,7 @@
                     </tr>
                     {% else %}
                     <tr>
-                        <td colspan="8" class="text-center text-muted py-5">
+                        <td colspan="9" class="text-center text-muted py-5">
                             <i class="bi bi-inbox fs-1 d-block mb-3"></i>
                             Объекты не найдены
                         </td>

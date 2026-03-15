@@ -3685,14 +3685,36 @@ def logout():
 def admin_properties():
     user = get_current_admin()
     if user and user.is_superadmin:
-        properties = Property.query.all()
+        properties = Property.query.order_by(Property.display_order.asc(), Property.created_at.desc()).all()
     else:
         accessible_ids = db.session.query(AdminPropertyAccess.property_id).filter(AdminPropertyAccess.user_id == session.get('user_id'))
-        properties = Property.query.filter(or_(Property.owner_id == session.get('user_id'), Property.id.in_(accessible_ids))).all()
+        properties = Property.query.filter(or_(Property.owner_id == session.get('user_id'), Property.id.in_(accessible_ids))).order_by(Property.display_order.asc(), Property.created_at.desc()).all()
     # Create a mapping of slug -> name for property types
     types = PropertyType.query.all()
     type_map = {t.slug: t.name for t in types}
     return render_template('admin/properties.html', properties=properties, type_map=type_map)
+
+@app.route('/admin/properties/reorder', methods=['POST'])
+@admin_required
+def reorder_properties():
+    try:
+        data = request.get_json()
+        order = data.get('order', [])
+        
+        if not order:
+            return jsonify({'success': False, 'error': 'No order provided'})
+        
+        # Update display_order for each property
+        for index, property_id in enumerate(order):
+            property_obj = Property.query.get(property_id)
+            if property_obj:
+                property_obj.display_order = index
+        
+        db.session.commit()
+        return jsonify({'success': True})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)})
 
 @app.route('/admin/properties/add', methods=['GET', 'POST'])
 @admin_required

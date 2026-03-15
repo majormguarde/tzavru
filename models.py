@@ -86,6 +86,7 @@ class Property(db.Model):
     is_available = db.Column(db.Boolean, default=True)
     latitude = db.Column(db.Float)
     longitude = db.Column(db.Float)
+    display_order = db.Column(db.Integer, default=0)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
