@@ -4052,11 +4052,16 @@ def admin_property_edit(property_id):
             # Fallback path if the first one doesn't work (some hostings might have different cwd)
             fallback_filepath = os.path.join(app.root_path, 'static', 'uploads', filename)
             
+            # Additional fallback for some common python hosting structures (like pythonanywhere/beget)
+            fallback_filepath_3 = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static', 'uploads', filename)
+            
             target_path = None
             if os.path.exists(filepath):
                 target_path = filepath
             elif os.path.exists(fallback_filepath):
                 target_path = fallback_filepath
+            elif os.path.exists(fallback_filepath_3):
+                target_path = fallback_filepath_3
                 
             if target_path:
                 try:
@@ -4066,9 +4071,20 @@ def admin_property_edit(property_id):
                         img_info['width'], img_info['height'] = img.size
                     img_info['filename'] = filename
                 except Exception as e:
-                    print(f"Error getting image stats for {target_path}: {e}")
+                    error_msg = f"Error getting image stats for {target_path}: {e}"
+                    print(error_msg)
+                    app.logger.error(error_msg)
             else:
-                print(f"Image not found on disk: {filepath} AND {fallback_filepath}")
+                error_msg = f"Image not found on disk: {filepath} AND {fallback_filepath} AND {fallback_filepath_3}"
+                print(error_msg)
+                app.logger.error(error_msg)
+                
+                # Write to a specific debug file in the instance folder just to be sure we can see it
+                try:
+                    with open(os.path.join(app.instance_path, 'image_path_debug.txt'), 'a') as f:
+                        f.write(f"{datetime.now()}: {error_msg}\n")
+                except:
+                    pass
                 
         return img_info
     
