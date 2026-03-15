@@ -4047,20 +4047,9 @@ def admin_property_edit(property_id):
     def get_image_info(url, is_main=False):
         img_info = {'url': url, 'is_main': is_main}
         
-        # Детальное логирование для отладки на хостинге
-        debug_msg = f"=== DEBUG get_image_info called with URL: {url}, is_main: {is_main}"
-        print(debug_msg)
-        app.logger.info(debug_msg)
-        debug_info.append(debug_msg)  # Добавляем в список отладочной информации
-        
         # Исправляем URL, убирая лишний путь /cgi-bin/wsgi.py если он есть
-        original_url = url
         if '/cgi-bin/wsgi.py' in url:
             url = url.replace('/cgi-bin/wsgi.py', '')
-            debug_msg = f"=== DEBUG Fixed URL: {original_url} -> {url}"
-            print(debug_msg)
-            app.logger.info(debug_msg)
-            debug_info.append(debug_msg)
         
         # Check if URL starts with the static prefix
         prefix = '/static/uploads/'
@@ -4068,9 +4057,6 @@ def admin_property_edit(property_id):
             # Extract filename and unquote it in case there are URL-encoded characters (like spaces %20)
             from urllib.parse import unquote
             filename = unquote(url[len(prefix):])
-            
-            print(f"=== DEBUG Extracted filename: {filename}")
-            app.logger.info(f"=== DEBUG Extracted filename: {filename}")
             
             # Use os.path.join with app.config['UPLOAD_FOLDER'] which is typically correctly configured 
             # for both local and production environments
@@ -4082,28 +4068,13 @@ def admin_property_edit(property_id):
             # Additional fallback for some common python hosting structures (like pythonanywhere/beget)
             fallback_filepath_3 = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static', 'uploads', filename)
             
-            print(f"=== DEBUG Checking paths:")
-            print(f"=== DEBUG Primary path: {filepath} (exists: {os.path.exists(filepath)})")
-            print(f"=== DEBUG Fallback 1: {fallback_filepath} (exists: {os.path.exists(fallback_filepath)})")
-            print(f"=== DEBUG Fallback 2: {fallback_filepath_3} (exists: {os.path.exists(fallback_filepath_3)})")
-            
-            app.logger.info(f"=== DEBUG Primary path: {filepath} (exists: {os.path.exists(filepath)})")
-            app.logger.info(f"=== DEBUG Fallback 1: {fallback_filepath} (exists: {os.path.exists(fallback_filepath)})")
-            app.logger.info(f"=== DEBUG Fallback 2: {fallback_filepath_3} (exists: {os.path.exists(fallback_filepath_3)})")
-            
             target_path = None
             if os.path.exists(filepath):
                 target_path = filepath
-                print(f"=== DEBUG Using primary path: {filepath}")
-                app.logger.info(f"=== DEBUG Using primary path: {filepath}")
             elif os.path.exists(fallback_filepath):
                 target_path = fallback_filepath
-                print(f"=== DEBUG Using fallback path 1: {fallback_filepath}")
-                app.logger.info(f"=== DEBUG Using fallback path 1: {fallback_filepath}")
             elif os.path.exists(fallback_filepath_3):
                 target_path = fallback_filepath_3
-                print(f"=== DEBUG Using fallback path 2: {fallback_filepath_3}")
-                app.logger.info(f"=== DEBUG Using fallback path 2: {fallback_filepath_3}")
                 
             if target_path:
                 try:
@@ -4112,31 +4083,8 @@ def admin_property_edit(property_id):
                     with Image.open(target_path) as img:
                         img_info['width'], img_info['height'] = img.size
                     img_info['filename'] = filename
-                    print(f"=== DEBUG Success! Got image info: size={img_info['size']}, dimensions={img_info['width']}x{img_info['height']}")
-                    app.logger.info(f"=== DEBUG Success! Got image info: size={img_info['size']}, dimensions={img_info['width']}x{img_info['height']}")
                 except Exception as e:
-                    error_msg = f"Error getting image stats for {target_path}: {e}"
-                    print(f"=== DEBUG {error_msg}")
-                    app.logger.error(f"=== DEBUG {error_msg}")
-            else:
-                error_msg = f"Image not found on disk: {filepath} AND {fallback_filepath} AND {fallback_filepath_3}"
-                print(f"=== DEBUG {error_msg}")
-                app.logger.error(f"=== DEBUG {error_msg}")
-                
-                # Write to a specific debug file in the instance folder just to be sure we can see it
-                try:
-                    debug_file_path = os.path.join(app.instance_path, 'image_path_debug.txt')
-                    print(f"=== DEBUG Attempting to write to debug file: {debug_file_path}")
-                    with open(debug_file_path, 'a') as f:
-                        f.write(f"{datetime.now()}: {error_msg}\n")
-                    print(f"=== DEBUG Successfully wrote to debug file: {debug_file_path}")
-                except Exception as file_error:
-                    print(f"=== DEBUG Failed to write debug file: {file_error}")
-                    app.logger.error(f"=== DEBUG Failed to write debug file: {file_error}")
-                
-        else:
-            print(f"=== DEBUG URL does not start with expected prefix '{prefix}'")
-            app.logger.info(f"=== DEBUG URL does not start with expected prefix '{prefix}'")
+                    app.logger.error(f"Error getting image stats for {target_path}: {e}")
                 
         return img_info
     
