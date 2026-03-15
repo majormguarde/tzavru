@@ -169,13 +169,7 @@
                         <i class="bi bi-clock me-2"></i> 
                         {{ site_settings.working_hours if site_settings and site_settings.working_hours else 'Ежедневно с 9:00 до 21:00' }}
                     </p>
-                    {% if site_settings and site_settings.map_url %}
-                    <p class="mb-0">
-                        <a href="{{ site_settings.map_url }}" target="_blank" class="text-primary text-decoration-none">
-                            <i class="bi bi-map me-2"></i> Показать на карте
-                        </a>
-                    </p>
-                    {% endif %}
+
                 </div>
                 <div class="col-12 col-md-6 col-lg-4 mb-4">
                     <h6 class="mb-3">Наши объекты</h6>

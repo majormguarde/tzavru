@@ -42,42 +42,8 @@
 {% endblock %}
 
 {% block extra_js %}
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 <script>
     document.addEventListener('DOMContentLoaded', function() {
-        // Initialize map centered on Pskov region (approx)
-        var map = L.map('map-container', {
-            scrollWheelZoom: false, // Disable scroll zoom to prevent trapping page scroll
-            dragging: !L.Browser.mobile // Optional: disable dragging on mobile if it interferes with vertical scrolling
-        }).setView([57.819, 28.332], 8);
-
-        // Enable scroll wheel zoom only after clicking on the map
-        map.on('click', function() {
-            if (map.scrollWheelZoom.enabled()) {
-                map.scrollWheelZoom.disable();
-            } else {
-                map.scrollWheelZoom.enable();
-            }
-        });
-
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-        }).addTo(map);
-
-        var bounds = [];
-
-        {% if map_properties %}
-            {% for property in map_properties %}
-                var marker = L.marker([{{ property.latitude }}, {{ property.longitude }}]).addTo(map);
-                marker.bindPopup("<b>{{ property.name }}</b><br>{{ property.location }}<br><a href='{{ url_for('property_detail', id=property.id) }}'>Подробнее</a>");
-                bounds.push([{{ property.latitude }}, {{ property.longitude }}]);
-            {% endfor %}
-
-            if (bounds.length > 0) {
-                map.fitBounds(bounds, {padding: [50, 50]});
-            }
-        {% endif %}
-
         // Review Modal Logic
         var reviewModal = document.getElementById('reviewModal');
         if (reviewModal) {
@@ -136,52 +102,8 @@
                 }
             });
         }
-
-        // Property Map Modal Logic
-        var propertyMapModal = document.getElementById('propertyMapModal');
-        var modalMap = null;
-        var modalMarker = null;
-
-        if (propertyMapModal) {
-            propertyMapModal.addEventListener('shown.bs.modal', function (event) {
-                var button = event.relatedTarget;
-                var lat = parseFloat(button.getAttribute('data-lat'));
-                var lng = parseFloat(button.getAttribute('data-lng'));
-                var name = button.getAttribute('data-name');
-                var location = button.getAttribute('data-location');
-
-                document.getElementById('modal-property-name').textContent = name;
-                document.getElementById('modal-property-location').textContent = location;
-
-                if (!modalMap) {
-                    modalMap = L.map('modal-map-container').setView([lat, lng], 14);
-                    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-                    }).addTo(modalMap);
-                } else {
-                    modalMap.setView([lat, lng], 14);
-                }
-
-                if (modalMarker) {
-                    modalMarker.setLatLng([lat, lng]);
-                } else {
-                    modalMarker = L.marker([lat, lng]).addTo(modalMap);
-                }
-                
-                modalMarker.bindPopup("<b>" + name + "</b><br>" + location).openPopup();
-                
-                // Force map to recalculate its size after modal animation
-                setTimeout(function() {
-                    modalMap.invalidateSize();
-                }, 100);
-            });
-        }
     });
 </script>
-{% endblock %}
-
-{% block extra_css %}
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
 {% endblock %}
 
 {% block content %}
@@ -286,18 +208,8 @@
                             </div>
                         </div>
                         
-                        <div class="property-actions d-flex gap-2">
-                            <span class="btn btn-outline-primary px-3 d-flex align-items-center justify-content-center btn-map-trigger" 
-                               data-bs-toggle="modal" 
-                               data-bs-target="#propertyMapModal"
-                               data-lat="{{ property.latitude if property.latitude else '57.819' }}"
-                               data-lng="{{ property.longitude if property.longitude else '28.332' }}"
-                               data-name="{{ property.name }}"
-                               data-location="{{ property.location }}"
-                               title="Показать на карте"
-                               style="cursor: pointer;">
-                                <i class="bi bi-geo-alt-fill h5 mb-0"></i>
-                            </span>
+
+                            <div class="property-actions d-flex gap-2">
                             {% if property.is_available %}
                             <a href="{{ url_for('property_detail', id=property.id) }}" 
                                class="btn btn-outline-primary flex-grow-1">
@@ -479,38 +391,6 @@
     </div>
 </section>
 
-<!-- Property Map Modal -->
-<div class="modal fade" id="propertyMapModal" tabindex="-1" aria-labelledby="propertyMapModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered modal-lg">
-        <div class="modal-content">
-            <div class="modal-header border-0 pb-0">
-                <h5 class="modal-title" id="propertyMapModalLabel">Местоположение объекта</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <div class="modal-body p-0 mt-3 overflow-hidden rounded-bottom">
-                <div id="modal-map-container" style="height: 450px; width: 100%;"></div>
-                <div class="p-3 border-top border-secondary border-opacity-25">
-                    <div class="d-flex align-items-center justify-content-between">
-                        <div>
-                            <h5 id="modal-property-name" class="mb-1"></h5>
-                            <p id="modal-property-location" class="text-muted small mb-0"><i class="bi bi-geo-alt-fill me-1"></i> </p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
-
-<style>
-    #modal-map-container {
-        border-radius: 0;
-    }
-    .modal-content {
-        overflow: hidden;
-    }
-</style>
-
 <!-- Review Modal -->
 <div class="modal fade" id="reviewModal" tabindex="-1" aria-labelledby="reviewModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered modal-lg">
@@ -540,14 +420,6 @@
         </div>
     </div>
 </div>
-
-<!-- Map Section -->
-<section id="map" class="map-section py-3">
-    <div class="container">
-        <h2 class="section-title text-center mb-4">Наши объекты на карте</h2>
-        <div id="map-container" style="height: 500px; width: 100%; border-radius: 10px; overflow: hidden; box-shadow: 0 4px 6px rgba(255,255,255,0.1);"></div>
-    </div>
-</section>
 
 <!-- Contact Section -->
 <section id="contact" class="contact-section py-5">

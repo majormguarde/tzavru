@@ -741,14 +741,11 @@ def index():
     properties = Property.query.options(
         selectinload(Property.amenity_resources).selectinload(AmenityResource.unit_type),
         selectinload(Property.amenity_resources).selectinload(AmenityResource.resource_type_obj)
-    ).order_by(Property.created_at.desc()).all()
+    ).order_by(Property.display_order.asc(), Property.created_at.desc()).all()
     
     # Получаем опубликованные отзывы
     reviews = Review.query.filter_by(is_published=True).order_by(Review.created_at.desc()).limit(6).all()
-    # Получаем объекты с координатами
-    map_properties = Property.query.filter(Property.latitude.isnot(None), Property.longitude.isnot(None)).all()
-    
-    return render_template('index.html', properties=properties, reviews=reviews, map_properties=map_properties)
+    return render_template('index.html', properties=properties, reviews=reviews)
 
 def send_verification_email(user_email, verification_token):
     """Отправляет email с подтверждением регистрации"""
