@@ -32,6 +32,11 @@
     "addressRegion": "Псковская область",
     "addressCountry": "RU"
   },
+  "geo": {
+    "@type": "GeoCoordinates",
+    "latitude": {{ property.latitude if property.latitude is not none else 'null' }},
+    "longitude": {{ property.longitude if property.longitude is not none else 'null' }}
+  },
   "priceRange": "{{ property.price_per_night|format_price }} ₽",
   "numberOfRooms": {{ property.capacity }},
   "checkinTime": "14:00",
