@@ -292,20 +292,6 @@
                     </div>
                 </div>
                 {% endif %}
-
-                <!-- SEO Keywords Display -->
-                {% if property.seo_keywords %}
-                <div class="mt-5">
-                    <h4 class="h5 mb-3 text-muted">Теги объекта:</h4>
-                    <div class="d-flex flex-wrap gap-2">
-                        {% for keyword in property.seo_keywords.split(',') %}
-                            {% if keyword.strip() %}
-                            <span class="badge bg-light text-dark border p-2">{{ keyword.strip() }}</span>
-                            {% endif %}
-                        {% endfor %}
-                    </div>
-                </div>
-                {% endif %}
             </div>
             </div>
         </div>
