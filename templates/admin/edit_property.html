@@ -23,6 +23,20 @@
         max-height: 100%;
     }
 
+    .editor-quality-preview {
+        background: #111;
+        border-radius: 0.5rem;
+        overflow: hidden;
+    }
+
+    .editor-quality-preview img {
+        width: 100%;
+        height: 180px;
+        object-fit: contain;
+        display: block;
+        background: #111;
+    }
+
     /* No more !important overrides for cropper internals - 
        they break internal positioning and sizing logic. */
 
@@ -43,6 +57,7 @@
     let cropper = null;
     let currentEditTarget = null;
     let pendingEditorConfig = null;
+    let qualityPreviewTimer = null;
 
     function escapeHtml(value) {
         return String(value || '')
@@ -61,6 +76,95 @@
     function estimateDataUrlBytes(dataUrl) {
         const base64 = (dataUrl || '').split(',')[1] || '';
         return Math.round((base64.length * 3) / 4);
+    }
+
+    function getEditorOutputMimeType() {
+        return currentEditTarget && currentEditTarget.mimeType === 'image/png' ? 'image/png' : 'image/jpeg';
+    }
+
+    function getEditorQualityRatio() {
+        const qualityInput = document.getElementById('editorQuality');
+        return qualityInput ? (parseInt(qualityInput.value, 10) || 82) / 100 : 0.82;
+    }
+
+    function buildEditorCanvas(width, height) {
+        return cropper.getCroppedCanvas({
+            width: width,
+            height: height,
+            imageSmoothingEnabled: true,
+            imageSmoothingQuality: 'high',
+            fillColor: '#ffffff'
+        });
+    }
+
+    function updateCompressionUi() {
+        const isPng = getEditorOutputMimeType() === 'image/png';
+        const qualityBlock = document.getElementById('editorQualityBlock');
+        const pngHint = document.getElementById('editorPngHint');
+
+        if (qualityBlock) qualityBlock.classList.toggle('d-none', isPng);
+        if (pngHint) pngHint.classList.toggle('d-none', !isPng);
+    }
+
+    function updateQualityLabel() {
+        const qualityInput = document.getElementById('editorQuality');
+        const qualityValue = document.getElementById('editorQualityValue');
+        if (qualityInput && qualityValue) {
+            qualityValue.textContent = `${qualityInput.value}%`;
+        }
+    }
+
+    function updateEstimatedOutputSize() {
+        const estimatedNode = document.getElementById('editorEstimatedSize');
+        if (!estimatedNode || !cropper) return;
+
+        const width = parseInt(document.getElementById('editorWidth').value, 10);
+        const height = parseInt(document.getElementById('editorHeight').value, 10);
+        if (!width || !height || width < 50 || height < 50) {
+            estimatedNode.textContent = 'Размер будет рассчитан после ввода корректных габаритов';
+            return;
+        }
+
+        try {
+            const canvas = buildEditorCanvas(width, height);
+            const dataUrl = canvas.toDataURL(getEditorOutputMimeType(), getEditorQualityRatio());
+            estimatedNode.textContent = `Примерный размер файла: ${formatBytes(estimateDataUrlBytes(dataUrl))}`;
+        } catch (error) {
+            estimatedNode.textContent = 'Не удалось оценить размер файла';
+        }
+    }
+
+    function renderQualityPreview() {
+        const previewImage = document.getElementById('editorQualityPreviewImage');
+        const previewMeta = document.getElementById('editorQualityPreviewMeta');
+        if (!previewImage || !previewMeta || !cropper) return;
+
+        const width = parseInt(document.getElementById('editorWidth').value, 10);
+        const height = parseInt(document.getElementById('editorHeight').value, 10);
+        if (!width || !height || width < 50 || height < 50) {
+            previewMeta.textContent = 'Введите корректные размеры, чтобы увидеть предпросмотр.';
+            return;
+        }
+
+        try {
+            const canvas = buildEditorCanvas(width, height);
+            const dataUrl = canvas.toDataURL(getEditorOutputMimeType(), getEditorQualityRatio());
+            previewImage.src = dataUrl;
+            previewMeta.textContent = `Живой предпросмотр, ${width}x${height}px, ${formatBytes(estimateDataUrlBytes(dataUrl))}`;
+        } catch (error) {
+            previewMeta.textContent = 'Не удалось обновить предпросмотр качества.';
+        }
+    }
+
+    function scheduleQualityPreview() {
+        if (qualityPreviewTimer) {
+            clearTimeout(qualityPreviewTimer);
+        }
+
+        qualityPreviewTimer = setTimeout(function() {
+            renderQualityPreview();
+            updateEstimatedOutputSize();
+        }, 80);
     }
 
     function syncEditedInputs() {
@@ -136,8 +240,12 @@
                         setTimeout(function() {
                             fitImageToEditor();
                             setAspectRatioFromInputs();
+                            scheduleQualityPreview();
                         }, 60);
                     });
+                },
+                crop: function() {
+                    scheduleQualityPreview();
                 }
             });
         };
@@ -268,12 +376,18 @@
         const editorHeight = document.getElementById('editorHeight');
         const editorMeta = document.getElementById('editorImageMeta');
         const modalTitle = document.getElementById('imageEditorModalLabel');
+        const qualityInput = document.getElementById('editorQuality');
 
         destroyCropper();
         editorWidth.value = config.width || 1200;
         editorHeight.value = config.height || 800;
+        if (qualityInput) {
+            qualityInput.value = config.mimeType === 'image/png' ? 100 : 82;
+        }
         editorMeta.textContent = `${config.filename || 'Изображение'}${config.width && config.height ? `, ${config.width}x${config.height}px` : ''}`;
         modalTitle.textContent = config.kind === 'existing' ? 'Редактирование изображения' : 'Подготовка нового изображения';
+        updateQualityLabel();
+        updateCompressionUi();
         pendingEditorConfig = config;
         bootstrap.Modal.getOrCreateInstance(document.getElementById('imageEditorModal')).show();
     }
@@ -288,16 +402,8 @@
             return;
         }
 
-        const mimeType = currentEditTarget.mimeType === 'image/png' ? 'image/png' : 'image/jpeg';
-        const canvas = cropper.getCroppedCanvas({
-            width: width,
-            height: height,
-            imageSmoothingEnabled: true,
-            imageSmoothingQuality: 'high',
-            fillColor: '#ffffff'
-        });
-
-        const dataUrl = canvas.toDataURL(mimeType, 0.9);
+        const canvas = buildEditorCanvas(width, height);
+        const dataUrl = canvas.toDataURL(getEditorOutputMimeType(), getEditorQualityRatio());
         const payload = {
             data_url: dataUrl,
             width: width,
@@ -340,19 +446,37 @@
                     if (cropper) {
                         fitImageToEditor();
                         setAspectRatioFromInputs();
+                        scheduleQualityPreview();
                     }
                 }, 120);
             });
             imageEditorModal.addEventListener('hidden.bs.modal', function() {
                 destroyCropper();
+                if (qualityPreviewTimer) {
+                    clearTimeout(qualityPreviewTimer);
+                    qualityPreviewTimer = null;
+                }
                 pendingEditorConfig = null;
                 currentEditTarget = null;
             });
         }
 
-        document.getElementById('editorWidth')?.addEventListener('input', setAspectRatioFromInputs);
-        document.getElementById('editorHeight')?.addEventListener('input', setAspectRatioFromInputs);
-        document.getElementById('editorAspectLock')?.addEventListener('change', setAspectRatioFromInputs);
+        document.getElementById('editorWidth')?.addEventListener('input', function() {
+            setAspectRatioFromInputs();
+            scheduleQualityPreview();
+        });
+        document.getElementById('editorHeight')?.addEventListener('input', function() {
+            setAspectRatioFromInputs();
+            scheduleQualityPreview();
+        });
+        document.getElementById('editorAspectLock')?.addEventListener('change', function() {
+            setAspectRatioFromInputs();
+            scheduleQualityPreview();
+        });
+        document.getElementById('editorQuality')?.addEventListener('input', function() {
+            updateQualityLabel();
+            scheduleQualityPreview();
+        });
         document.getElementById('saveImageEditsBtn')?.addEventListener('click', saveImageEdits);
 
         document.querySelectorAll('.gallery-item').forEach((item) => {
@@ -428,6 +552,7 @@
                 document.getElementById('editorWidth').value = presetButton.dataset.width;
                 document.getElementById('editorHeight').value = presetButton.dataset.height;
                 setAspectRatioFromInputs();
+                scheduleQualityPreview();
             }
         });
     });
@@ -804,6 +929,29 @@
                         <div class="form-check form-switch mb-3">
                             <input class="form-check-input" type="checkbox" role="switch" id="editorAspectLock" checked>
                             <label class="form-check-label" for="editorAspectLock">Фиксировать пропорции кадра</label>
+                        </div>
+                        <div class="mb-3" id="editorQualityBlock">
+                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                <label for="editorQuality" class="form-label mb-0">Качество JPEG</label>
+                                <span class="small text-muted" id="editorQualityValue">82%</span>
+                            </div>
+                            <input type="range" id="editorQuality" class="form-range" min="40" max="95" step="1" value="82">
+                            <div class="form-text">Ниже качество, меньше размер файла. Для web обычно достаточно 70-85%.</div>
+                        </div>
+                        <div class="alert alert-secondary small py-2 d-none" id="editorPngHint">
+                            Для PNG уменьшение веса в основном достигается через ширину и высоту. Ползунок качества применяется только к JPEG.
+                        </div>
+                        <div class="small text-info mb-3" id="editorEstimatedSize">
+                            Примерный размер файла будет рассчитан после открытия изображения
+                        </div>
+                        <div class="mb-3">
+                            <div class="small fw-semibold mb-2">Предпросмотр качества</div>
+                            <div class="editor-quality-preview border">
+                                <img id="editorQualityPreviewImage" alt="Предпросмотр качества сжатия">
+                            </div>
+                            <div class="small text-muted mt-2" id="editorQualityPreviewMeta">
+                                Предпросмотр будет показан после открытия изображения
+                            </div>
                         </div>
                         <div class="mb-3">
                             <div class="small fw-semibold mb-2">Быстрые размеры</div>
