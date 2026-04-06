@@ -109,6 +109,106 @@ def allowed_video_file(filename):
     return '.' in filename and \
            filename.rsplit('.', 1)[1].lower() in ALLOWED_VIDEO_EXTENSIONS
 
+
+def resolve_uploaded_image_path(url):
+    if not url:
+        return None
+
+    if '/cgi-bin/wsgi.py' in url:
+        url = url.replace('/cgi-bin/wsgi.py', '')
+
+    prefix = '/static/uploads/'
+    if not url.startswith(prefix):
+        return None
+
+    from urllib.parse import unquote
+
+    filename = unquote(url[len(prefix):])
+    candidate_paths = [
+        os.path.join(app.config['UPLOAD_FOLDER'], filename),
+        os.path.join(app.root_path, 'static', 'uploads', filename),
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static', 'uploads', filename),
+    ]
+
+    for path in candidate_paths:
+        if os.path.exists(path):
+            return path
+
+    return candidate_paths[0]
+
+
+def save_uploaded_image_file(file_storage):
+    filename = secure_filename(file_storage.filename)
+    filename = f"{datetime.now().strftime('%Y%m%d%H%M%S%f')}_{filename}"
+    if not os.path.exists(app.config['UPLOAD_FOLDER']):
+        os.makedirs(app.config['UPLOAD_FOLDER'])
+    file_storage.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+    return url_for('static', filename=f'uploads/{filename}')
+
+
+def save_image_data_url(data_url, target_path):
+    if not data_url or ',' not in data_url:
+        raise ValueError('Некорректные данные изображения')
+
+    header, encoded = data_url.split(',', 1)
+    if ';base64' not in header:
+        raise ValueError('Ожидался base64-формат изображения')
+
+    image_bytes = base64.b64decode(encoded)
+
+    from PIL import Image, ImageOps
+
+    with Image.open(io.BytesIO(image_bytes)) as img:
+        img = ImageOps.exif_transpose(img)
+        ext = os.path.splitext(target_path)[1].lower()
+
+        if ext in ['.jpg', '.jpeg']:
+            if img.mode not in ('RGB', 'L'):
+                img = img.convert('RGB')
+            save_kwargs = {'format': 'JPEG', 'quality': 88, 'optimize': True}
+        elif ext == '.png':
+            if img.mode not in ('RGB', 'RGBA', 'L', 'LA'):
+                img = img.convert('RGBA')
+            save_kwargs = {'format': 'PNG', 'optimize': True}
+        elif ext == '.gif':
+            raise ValueError('Редактирование GIF не поддерживается')
+        else:
+            if img.mode not in ('RGB', 'RGBA', 'L', 'LA'):
+                img = img.convert('RGBA')
+            save_kwargs = {'format': 'PNG', 'optimize': True}
+
+        os.makedirs(os.path.dirname(target_path), exist_ok=True)
+        img.save(target_path, **save_kwargs)
+
+
+def save_new_image_from_data_url(data_url, original_filename):
+    filename = secure_filename(original_filename or 'image.png')
+    filename = f"{datetime.now().strftime('%Y%m%d%H%M%S%f')}_{filename}"
+    target_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+    save_image_data_url(data_url, target_path)
+    return url_for('static', filename=f'uploads/{filename}')
+
+
+def extract_new_image_urls(uploaded_files, edited_new_images):
+    image_urls = []
+    edited_new_images = edited_new_images or {}
+
+    for index, file in enumerate(uploaded_files):
+        if not file or not allowed_file(file.filename):
+            continue
+
+        edit_payload = edited_new_images.get(str(index)) or {}
+        if edit_payload.get('data_url'):
+            try:
+                image_urls.append(save_new_image_from_data_url(edit_payload['data_url'], file.filename))
+            except Exception as e:
+                app.logger.error(f"Error saving edited new image {file.filename}: {e}")
+                image_urls.append(save_uploaded_image_file(file))
+        else:
+            image_urls.append(save_uploaded_image_file(file))
+
+    return image_urls
+
 import threading
 from pywebpush import webpush, WebPushException
 
@@ -3742,16 +3842,16 @@ def add_property():
         
         features = request.form.get('features', '').strip().split('\n')
         features = [f.strip() for f in features if f.strip()]
-        
-        image_urls = []
-        if 'images' in request.files:
-            for file in request.files.getlist('images'):
-                if file and allowed_file(file.filename):
-                    filename = secure_filename(file.filename)
-                    filename = f"{datetime.now().strftime('%Y%m%d%H%M%S')}_{filename}"
-                    if not os.path.exists(app.config['UPLOAD_FOLDER']): os.makedirs(app.config['UPLOAD_FOLDER'])
-                    file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
-                    image_urls.append(url_for('static', filename=f'uploads/{filename}'))
+
+        try:
+            edited_new_images = json.loads(request.form.get('edited_new_images') or '{}')
+        except json.JSONDecodeError:
+            edited_new_images = {}
+
+        image_urls = extract_new_image_urls(
+            request.files.getlist('images') if 'images' in request.files else [],
+            edited_new_images
+        )
         
         image_url = image_urls[0] if image_urls else None
         gallery_urls = image_urls[1:] if len(image_urls) > 1 else []
@@ -3929,15 +4029,36 @@ def admin_property_edit(property_id):
         kept_images = [img for img in all_existing if img not in images_to_delete]
         
         # Handle new uploads
-        new_urls = []
-        if 'images' in request.files:
-            for file in request.files.getlist('images'):
-                if file and allowed_file(file.filename):
-                    filename = secure_filename(file.filename)
-                    filename = f"{datetime.now().strftime('%Y%m%d%H%M%S')}_{filename}"
-                    if not os.path.exists(app.config['UPLOAD_FOLDER']): os.makedirs(app.config['UPLOAD_FOLDER'])
-                    file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
-                    new_urls.append(url_for('static', filename=f'uploads/{filename}'))
+        try:
+            edited_existing_images = json.loads(request.form.get('edited_existing_images') or '{}')
+        except json.JSONDecodeError:
+            edited_existing_images = {}
+
+        try:
+            edited_new_images = json.loads(request.form.get('edited_new_images') or '{}')
+        except json.JSONDecodeError:
+            edited_new_images = {}
+
+        for image_url, payload in edited_existing_images.items():
+            if image_url in images_to_delete:
+                continue
+            if not isinstance(payload, dict) or not payload.get('data_url'):
+                continue
+
+            target_path = resolve_uploaded_image_path(image_url)
+            if not target_path or not os.path.exists(target_path):
+                continue
+
+            try:
+                save_image_data_url(payload['data_url'], target_path)
+            except Exception as e:
+                app.logger.error(f"Error saving edited image {image_url}: {e}")
+                flash(f'Не удалось обновить изображение {os.path.basename(target_path)}', 'error')
+
+        new_urls = extract_new_image_urls(
+            request.files.getlist('images') if 'images' in request.files else [],
+            edited_new_images
+        )
         
         final_pool = kept_images + new_urls
         
@@ -4084,41 +4205,17 @@ def admin_property_edit(property_id):
         # Исправляем URL, убирая лишний путь /cgi-bin/wsgi.py если он есть
         if '/cgi-bin/wsgi.py' in url:
             url = url.replace('/cgi-bin/wsgi.py', '')
-        
-        # Check if URL starts with the static prefix
-        prefix = '/static/uploads/'
-        if url.startswith(prefix):
-            # Extract filename and unquote it in case there are URL-encoded characters (like spaces %20)
-            from urllib.parse import unquote
-            filename = unquote(url[len(prefix):])
-            
-            # Use os.path.join with app.config['UPLOAD_FOLDER'] which is typically correctly configured 
-            # for both local and production environments
-            filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-            
-            # Fallback path if the first one doesn't work (some hostings might have different cwd)
-            fallback_filepath = os.path.join(app.root_path, 'static', 'uploads', filename)
-            
-            # Additional fallback for some common python hosting structures (like pythonanywhere/beget)
-            fallback_filepath_3 = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static', 'uploads', filename)
-            
-            target_path = None
-            if os.path.exists(filepath):
-                target_path = filepath
-            elif os.path.exists(fallback_filepath):
-                target_path = fallback_filepath
-            elif os.path.exists(fallback_filepath_3):
-                target_path = fallback_filepath_3
-                
-            if target_path:
-                try:
-                    img_info['size'] = os.path.getsize(target_path)
-                    from PIL import Image
-                    with Image.open(target_path) as img:
-                        img_info['width'], img_info['height'] = img.size
-                    img_info['filename'] = filename
-                except Exception as e:
-                    app.logger.error(f"Error getting image stats for {target_path}: {e}")
+
+        target_path = resolve_uploaded_image_path(url)
+        if target_path and os.path.exists(target_path):
+            try:
+                img_info['size'] = os.path.getsize(target_path)
+                from PIL import Image
+                with Image.open(target_path) as img:
+                    img_info['width'], img_info['height'] = img.size
+                img_info['filename'] = os.path.basename(target_path)
+            except Exception as e:
+                app.logger.error(f"Error getting image stats for {target_path}: {e}")
                 
         return img_info
     

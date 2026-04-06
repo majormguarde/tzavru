@@ -4,49 +4,317 @@
     {% if property %}Редактирование объекта{% else %}Новый объект{% endif %}
 {% endblock %}
 
+{% block extra_css %}
+<link href="https://cdn.jsdelivr.net/npm/cropperjs@1.6.2/dist/cropper.min.css" rel="stylesheet">
+<style>
+    .image-editor-preview {
+        height: 60vh;
+        min-height: 450px;
+        width: 100%;
+        background: #222; /* Темный фон */
+        overflow: hidden;
+        position: relative;
+    }
+
+    #imageEditorSource {
+        display: block;
+        /* Убираем ограничения, чтобы Cropper мог сам рассчитать масштаб */
+        max-width: 100%;
+        max-height: 100%;
+    }
+
+    /* No more !important overrides for cropper internals - 
+       they break internal positioning and sizing logic. */
+
+    .gallery-item .card-img-top,
+    #newImagesPreview .card-img-top {
+        height: 120px;
+        object-fit: cover;
+    }
+</style>
+{% endblock %}
+
 {% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/cropperjs@1.6.2/dist/cropper.min.js"></script>
 <script>
-    function updateGalleryCount() {
+    const editedExistingImages = {};
+    const editedNewImages = {};
+    const previewObjectUrls = [];
+    let cropper = null;
+    let currentEditTarget = null;
+    let pendingEditorConfig = null;
+
+    function escapeHtml(value) {
+        return String(value || '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
+    function formatBytes(bytes) {
+        if (!bytes) return '';
+        return `${(bytes / 1024).toFixed(1)} KB`;
+    }
+
+    function estimateDataUrlBytes(dataUrl) {
+        const base64 = (dataUrl || '').split(',')[1] || '';
+        return Math.round((base64.length * 3) / 4);
+    }
+
+    function syncEditedInputs() {
+        document.getElementById('edited_existing_images').value = JSON.stringify(editedExistingImages);
+        document.getElementById('edited_new_images').value = JSON.stringify(editedNewImages);
+    }
+
+    function setAspectRatioFromInputs() {
+        if (!cropper) return;
+
+        const lock = document.getElementById('editorAspectLock').checked;
+        const width = parseInt(document.getElementById('editorWidth').value, 10);
+        const height = parseInt(document.getElementById('editorHeight').value, 10);
+
+        if (lock && width > 0 && height > 0) {
+            cropper.setAspectRatio(width / height);
+        } else {
+            cropper.setAspectRatio(NaN);
+        }
+    }
+
+    function destroyCropper() {
+        if (cropper) {
+            cropper.destroy();
+            cropper = null;
+        }
+    }
+
+    function fitImageToEditor() {
+        if (!cropper) return;
+
+        const containerData = cropper.getContainerData();
+        const imageData = cropper.getImageData();
+
+        if (!containerData.width || !containerData.height || !imageData.naturalWidth || !imageData.naturalHeight) {
+            return;
+        }
+
+        const scale = Math.min(
+            containerData.width / imageData.naturalWidth,
+            containerData.height / imageData.naturalHeight
+        );
+
+        cropper.zoomTo(scale);
+
+        const canvasData = cropper.getCanvasData();
+        cropper.setCanvasData({
+            left: (containerData.width - canvasData.width) / 2,
+            top: (containerData.height - canvasData.height) / 2
+        });
+    }
+
+    function initImageEditorCropper() {
+        if (!pendingEditorConfig) return;
+
+        const editorImage = document.getElementById('imageEditorSource');
+        const config = pendingEditorConfig;
+
+        destroyCropper();
+        editorImage.onload = function() {
+            destroyCropper();
+            cropper = new Cropper(editorImage, {
+                viewMode: 1,
+                dragMode: 'move',
+                autoCropArea: 1,
+                responsive: true,
+                restore: false,
+                background: false,
+                checkOrientation: true,
+                center: true,
+                ready: function() {
+                    requestAnimationFrame(function() {
+                        setTimeout(function() {
+                            fitImageToEditor();
+                            setAspectRatioFromInputs();
+                        }, 60);
+                    });
+                }
+            });
+        };
+        editorImage.src = config.src;
+        pendingEditorConfig = null;
+    }
+
+    function updateExistingCard(url, payload) {
+        const card = Array.from(document.querySelectorAll('.gallery-item')).find((item) => item.dataset.url === url);
+        if (!card) return;
+
+        const img = card.querySelector('img');
+        const changedBadge = card.querySelector('.edited-badge');
+        const dimensionsNode = card.querySelector('.image-dimensions');
+        const sizeNode = card.querySelector('.image-size');
+        const resetButton = card.querySelector('.reset-existing-image-btn');
+
+        if (payload) {
+            img.src = payload.data_url;
+            if (changedBadge) changedBadge.classList.remove('d-none');
+            if (dimensionsNode) dimensionsNode.textContent = `${payload.width}x${payload.height}px`;
+            if (sizeNode) sizeNode.textContent = formatBytes(estimateDataUrlBytes(payload.data_url));
+            if (resetButton) resetButton.classList.remove('d-none');
+            card.dataset.width = payload.width;
+            card.dataset.height = payload.height;
+        } else {
+            const originalSrc = card.dataset.originalSrc || url;
+            img.src = originalSrc;
+            if (changedBadge) changedBadge.classList.add('d-none');
+            if (dimensionsNode) dimensionsNode.textContent = card.dataset.originalDimensions || dimensionsNode.textContent;
+            if (sizeNode) sizeNode.textContent = card.dataset.originalSize || sizeNode.textContent;
+            if (resetButton) resetButton.classList.add('d-none');
+            card.dataset.width = card.dataset.originalWidth || card.dataset.width;
+            card.dataset.height = card.dataset.originalHeight || card.dataset.height;
+        }
+    }
+
+    function clearPreviewUrls() {
+        previewObjectUrls.forEach((url) => URL.revokeObjectURL(url));
+        previewObjectUrls.length = 0;
+    }
+
+    function getNewImagePreviewSrc(file, index) {
+        if (editedNewImages[String(index)]) {
+            return editedNewImages[String(index)].data_url;
+        }
+        const objectUrl = URL.createObjectURL(file);
+        previewObjectUrls.push(objectUrl);
+        return objectUrl;
+    }
+
+    function getImageDimensions(src) {
+        return new Promise((resolve) => {
+            const image = new Image();
+            image.onload = function() {
+                resolve({ width: image.naturalWidth, height: image.naturalHeight });
+            };
+            image.onerror = function() {
+                resolve({ width: null, height: null });
+            };
+            image.src = src;
+        });
+    }
+
+    async function renderNewImagesPreview() {
         const input = document.getElementById('galleryInput');
-        const count = input.files.length;
         const label = document.getElementById('galleryCount');
         const previewContainer = document.getElementById('newImagesPreview');
-        
-        // Update count label
-        if (count > 0) {
-            label.textContent = `Выбрано новых файлов: ${count}`;
-        } else {
-            label.textContent = '';
-        }
-        
-        // Update preview
-        previewContainer.innerHTML = ''; // Clear existing previews
-        
-        if (count > 0) {
-            Array.from(input.files).forEach((file, index) => {
-                if (!file.type.startsWith('image/')) return;
-                
-                const reader = new FileReader();
-                reader.onload = function(e) {
-                    const col = document.createElement('div');
-                    col.className = 'col-md-3 col-sm-4 col-6';
-                    
-                    col.innerHTML = `
-                        <div class="card h-100 border-success">
-                            <div class="position-relative">
-                                <img src="${e.target.result}" class="card-img-top" style="height: 120px; object-fit: cover;" alt="Property Image Preview" loading="lazy">
-                                <span class="position-absolute top-0 end-0 badge bg-success m-1">Новое</span>
-                            </div>
-                            <div class="card-body p-2 text-center">
-                                <small class="text-muted d-block text-truncate">${file.name}</small>
-                            </div>
+        const files = Array.from(input.files || []);
+
+        clearPreviewUrls();
+        previewContainer.innerHTML = '';
+        label.textContent = files.length ? `Выбрано новых файлов: ${files.length}` : '';
+
+        for (const [index, file] of files.entries()) {
+            if (!file.type.startsWith('image/')) continue;
+
+            const edited = editedNewImages[String(index)];
+            const previewSrc = getNewImagePreviewSrc(file, index);
+            const dimensions = edited || await getImageDimensions(previewSrc);
+            const sizeText = edited ? formatBytes(estimateDataUrlBytes(edited.data_url)) : formatBytes(file.size);
+            const canEdit = !file.name.toLowerCase().endsWith('.gif');
+
+            const col = document.createElement('div');
+            col.className = 'col-md-3 col-sm-4 col-6';
+            col.dataset.newImageIndex = index;
+            col.innerHTML = `
+                <div class="card h-100 border-success">
+                    <div class="position-relative">
+                        <img src="${previewSrc}" class="card-img-top" alt="Предпросмотр фото" loading="lazy">
+                        <span class="position-absolute top-0 end-0 badge bg-success m-1">Новое</span>
+                        <span class="position-absolute top-0 start-0 badge bg-info m-1 ${edited ? '' : 'd-none'} new-edited-badge">Изменено</span>
+                    </div>
+                    <div class="card-body p-2 text-center">
+                        <small class="text-muted d-block text-truncate mb-1" title="${escapeHtml(file.name)}">${escapeHtml(file.name)}</small>
+                        <div class="text-muted small border-top pt-1 mt-1" style="font-size: 0.7rem; line-height: 1.2;">
+                            <div class="new-image-dimensions">${dimensions.width && dimensions.height ? `${dimensions.width}x${dimensions.height}px` : ''}</div>
+                            <div class="new-image-size">${sizeText}</div>
                         </div>
-                    `;
-                    previewContainer.appendChild(col);
-                }
-                reader.readAsDataURL(file);
-            });
+                        <div class="d-grid gap-1 mt-2">
+                            <button type="button" class="btn btn-sm btn-outline-primary edit-new-image-btn" data-index="${index}" ${canEdit ? '' : 'disabled'}>Размер и кадрирование</button>
+                            <button type="button" class="btn btn-sm btn-outline-secondary reset-new-image-btn ${edited ? '' : 'd-none'}" data-index="${index}">Сбросить</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            previewContainer.appendChild(col);
         }
+    }
+
+    function updateGalleryCount() {
+        Object.keys(editedNewImages).forEach((key) => delete editedNewImages[key]);
+        syncEditedInputs();
+        renderNewImagesPreview();
+    }
+
+    async function openImageEditor(config) {
+        if (!config || !config.src) return;
+        if ((config.filename || '').toLowerCase().endsWith('.gif')) {
+            alert('Редактирование GIF пока не поддерживается.');
+            return;
+        }
+
+        currentEditTarget = config;
+
+        const editorImage = document.getElementById('imageEditorSource');
+        const editorWidth = document.getElementById('editorWidth');
+        const editorHeight = document.getElementById('editorHeight');
+        const editorMeta = document.getElementById('editorImageMeta');
+        const modalTitle = document.getElementById('imageEditorModalLabel');
+
+        destroyCropper();
+        editorWidth.value = config.width || 1200;
+        editorHeight.value = config.height || 800;
+        editorMeta.textContent = `${config.filename || 'Изображение'}${config.width && config.height ? `, ${config.width}x${config.height}px` : ''}`;
+        modalTitle.textContent = config.kind === 'existing' ? 'Редактирование изображения' : 'Подготовка нового изображения';
+        pendingEditorConfig = config;
+        bootstrap.Modal.getOrCreateInstance(document.getElementById('imageEditorModal')).show();
+    }
+
+    function saveImageEdits() {
+        if (!cropper || !currentEditTarget) return;
+
+        const width = parseInt(document.getElementById('editorWidth').value, 10);
+        const height = parseInt(document.getElementById('editorHeight').value, 10);
+        if (!width || !height || width < 50 || height < 50) {
+            alert('Укажите корректные размеры изображения.');
+            return;
+        }
+
+        const mimeType = currentEditTarget.mimeType === 'image/png' ? 'image/png' : 'image/jpeg';
+        const canvas = cropper.getCroppedCanvas({
+            width: width,
+            height: height,
+            imageSmoothingEnabled: true,
+            imageSmoothingQuality: 'high',
+            fillColor: '#ffffff'
+        });
+
+        const dataUrl = canvas.toDataURL(mimeType, 0.9);
+        const payload = {
+            data_url: dataUrl,
+            width: width,
+            height: height,
+            filename: currentEditTarget.filename
+        };
+
+        if (currentEditTarget.kind === 'existing') {
+            editedExistingImages[currentEditTarget.key] = payload;
+            updateExistingCard(currentEditTarget.key, payload);
+        } else {
+            editedNewImages[String(currentEditTarget.key)] = payload;
+            renderNewImagesPreview();
+        }
+
+        syncEditedInputs();
+        bootstrap.Modal.getInstance(document.getElementById('imageEditorModal')).hide();
     }
 
     document.addEventListener('DOMContentLoaded', function() {
@@ -61,6 +329,107 @@
             });
             updateImageOrder(); // Initialize order on load
         }
+
+        syncEditedInputs();
+
+        const imageEditorModal = document.getElementById('imageEditorModal');
+        if (imageEditorModal) {
+            imageEditorModal.addEventListener('shown.bs.modal', function() {
+                initImageEditorCropper();
+                setTimeout(function() {
+                    if (cropper) {
+                        fitImageToEditor();
+                        setAspectRatioFromInputs();
+                    }
+                }, 120);
+            });
+            imageEditorModal.addEventListener('hidden.bs.modal', function() {
+                destroyCropper();
+                pendingEditorConfig = null;
+                currentEditTarget = null;
+            });
+        }
+
+        document.getElementById('editorWidth')?.addEventListener('input', setAspectRatioFromInputs);
+        document.getElementById('editorHeight')?.addEventListener('input', setAspectRatioFromInputs);
+        document.getElementById('editorAspectLock')?.addEventListener('change', setAspectRatioFromInputs);
+        document.getElementById('saveImageEditsBtn')?.addEventListener('click', saveImageEdits);
+
+        document.querySelectorAll('.gallery-item').forEach((item) => {
+            const dimensionsNode = item.querySelector('.image-dimensions');
+            const sizeNode = item.querySelector('.image-size');
+            item.dataset.originalSrc = item.querySelector('img')?.src || item.dataset.url;
+            item.dataset.originalWidth = item.dataset.width || '';
+            item.dataset.originalHeight = item.dataset.height || '';
+            item.dataset.originalDimensions = dimensionsNode ? dimensionsNode.textContent : '';
+            item.dataset.originalSize = sizeNode ? sizeNode.textContent : '';
+        });
+
+        document.addEventListener('click', async function(event) {
+            const existingButton = event.target.closest('.edit-existing-image-btn');
+            if (existingButton) {
+                const item = existingButton.closest('.gallery-item');
+                await openImageEditor({
+                    kind: 'existing',
+                    key: item.dataset.url,
+                    src: editedExistingImages[item.dataset.url]?.data_url || item.dataset.originalSrc || item.dataset.url,
+                    width: parseInt(item.dataset.width, 10) || 1200,
+                    height: parseInt(item.dataset.height, 10) || 800,
+                    filename: item.dataset.filename || 'image.jpg',
+                    mimeType: (item.dataset.filename || '').toLowerCase().endsWith('.png') ? 'image/png' : 'image/jpeg'
+                });
+                return;
+            }
+
+            const resetExistingButton = event.target.closest('.reset-existing-image-btn');
+            if (resetExistingButton) {
+                const item = resetExistingButton.closest('.gallery-item');
+                delete editedExistingImages[item.dataset.url];
+                updateExistingCard(item.dataset.url, null);
+                syncEditedInputs();
+                return;
+            }
+
+            const newButton = event.target.closest('.edit-new-image-btn');
+            if (newButton) {
+                const input = document.getElementById('galleryInput');
+                const index = parseInt(newButton.dataset.index, 10);
+                const file = (input.files || [])[index];
+                if (!file) return;
+
+                const previewSrc = editedNewImages[String(index)]?.data_url || URL.createObjectURL(file);
+                if (!editedNewImages[String(index)]) {
+                    previewObjectUrls.push(previewSrc);
+                }
+
+                const dimensions = editedNewImages[String(index)] || await getImageDimensions(previewSrc);
+                await openImageEditor({
+                    kind: 'new',
+                    key: index,
+                    src: previewSrc,
+                    width: dimensions.width || 1200,
+                    height: dimensions.height || 800,
+                    filename: file.name,
+                    mimeType: file.type || 'image/jpeg'
+                });
+                return;
+            }
+
+            const resetNewButton = event.target.closest('.reset-new-image-btn');
+            if (resetNewButton) {
+                delete editedNewImages[String(resetNewButton.dataset.index)];
+                syncEditedInputs();
+                renderNewImagesPreview();
+                return;
+            }
+
+            const presetButton = event.target.closest('.preset-size-btn');
+            if (presetButton) {
+                document.getElementById('editorWidth').value = presetButton.dataset.width;
+                document.getElementById('editorHeight').value = presetButton.dataset.height;
+                setAspectRatioFromInputs();
+            }
+        });
     });
 
     function updateImageOrder() {
@@ -93,6 +462,8 @@
         <div class="card border-0 shadow-sm">
             <div class="card-body">
                 <form method="POST" enctype="multipart/form-data">
+                    <input type="hidden" name="edited_existing_images" id="edited_existing_images" value="{}">
+                    <input type="hidden" name="edited_new_images" id="edited_new_images" value="{}">
                     <div class="row g-3">
                         <div class="col-md-8">
                             <label class="form-label">Название *</label>
@@ -170,11 +541,16 @@
                                     
                                     {% if gallery_images %}
                                         {% for img in gallery_images %}
-                                        <div class="col-md-3 col-sm-4 col-6 gallery-item" data-url="{{ img.url }}">
+                                        <div class="col-md-3 col-sm-4 col-6 gallery-item"
+                                             data-url="{{ img.url }}"
+                                             data-width="{{ img.width or '' }}"
+                                             data-height="{{ img.height or '' }}"
+                                             data-filename="{{ img.filename or '' }}">
                                             <div class="card h-100 {{ 'border-primary' if loop.index0 == 0 else '' }}" style="cursor: grab;">
                                                 <div class="position-relative">
-                                                    <img src="{{ img.url }}" class="card-img-top" style="height: 120px; object-fit: cover;" alt="Property Image" loading="lazy">
+                                                    <img src="{{ img.url }}" class="card-img-top" alt="Property Image" loading="lazy">
                                                     <span class="position-absolute top-0 end-0 badge bg-primary m-1 main-badge {{ 'd-none' if loop.index0 > 0 else '' }}">Главное</span>
+                                                    <span class="position-absolute top-0 start-50 translate-middle-x badge bg-info m-1 d-none edited-badge">Изменено</span>
                                                     {% if img.width and img.height and (img.width < 800 or img.height < 600 or img.size > 2097152) %}
                                                     <span class="position-absolute top-0 start-0 badge bg-warning m-1" title="Фото не соответствует рекомендациям: {{ img.width }}x{{ img.height }}px, {{ (img.size / 1024)|round(1) }} KB">
                                                         <i class="bi bi-exclamation-triangle-fill"></i>
@@ -186,11 +562,19 @@
                                                         <input class="form-check-input" type="checkbox" name="delete_images" value="{{ img.url }}" id="del_img_{{ loop.index }}">
                                                         <label class="form-check-label small text-danger" for="del_img_{{ loop.index }}">Удалить</label>
                                                     </div>
+                                                    <div class="d-grid gap-1 mb-1">
+                                                        <button type="button" class="btn btn-sm btn-outline-primary edit-existing-image-btn" {% if img.filename and img.filename.lower().endswith('.gif') %}disabled{% endif %}>
+                                                            Размер и кадрирование
+                                                        </button>
+                                                        <button type="button" class="btn btn-sm btn-outline-secondary reset-existing-image-btn d-none">
+                                                            Сбросить
+                                                        </button>
+                                                    </div>
                                                     {% if img.size or img.width %}
                                                     <div class="text-muted small border-top pt-1 mt-1" style="font-size: 0.7rem; line-height: 1.2;">
                                                         {% if img.filename %}<div class="text-truncate mb-1" title="{{ img.filename }}">{{ img.filename }}</div>{% endif %}
-                                                        {% if img.width and img.height %}<div>{{ img.width }}x{{ img.height }}px</div>{% endif %}
-                                                        {% if img.size %}<div>{{ (img.size / 1024)|round(1) }} KB</div>{% endif %}
+                                                        {% if img.width and img.height %}<div class="image-dimensions">{{ img.width }}x{{ img.height }}px</div>{% endif %}
+                                                        {% if img.size %}<div class="image-size">{{ (img.size / 1024)|round(1) }} KB</div>{% endif %}
                                                     </div>
                                                     {% endif %}
                                                 </div>
@@ -386,6 +770,58 @@
                         </div>
                     </div>
                 </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="imageEditorModal" tabindex="-1" aria-labelledby="imageEditorModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="imageEditorModalLabel">Редактирование изображения</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрыть"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row g-4">
+                    <div class="col-lg-8">
+                        <div class="border rounded image-editor-preview d-flex align-items-center justify-content-center">
+                            <img id="imageEditorSource" alt="Редактируемое изображение">
+                        </div>
+                    </div>
+                    <div class="col-lg-4">
+                        <div class="small text-muted mb-3" id="editorImageMeta"></div>
+                        <div class="row g-2 mb-3">
+                            <div class="col-6">
+                                <label for="editorWidth" class="form-label">Ширина</label>
+                                <input type="number" id="editorWidth" class="form-control" min="50" step="10" value="1200">
+                            </div>
+                            <div class="col-6">
+                                <label for="editorHeight" class="form-label">Высота</label>
+                                <input type="number" id="editorHeight" class="form-control" min="50" step="10" value="800">
+                            </div>
+                        </div>
+                        <div class="form-check form-switch mb-3">
+                            <input class="form-check-input" type="checkbox" role="switch" id="editorAspectLock" checked>
+                            <label class="form-check-label" for="editorAspectLock">Фиксировать пропорции кадра</label>
+                        </div>
+                        <div class="mb-3">
+                            <div class="small fw-semibold mb-2">Быстрые размеры</div>
+                            <div class="d-flex flex-wrap gap-2">
+                                <button type="button" class="btn btn-sm btn-outline-secondary preset-size-btn" data-width="1200" data-height="800">1200x800</button>
+                                <button type="button" class="btn btn-sm btn-outline-secondary preset-size-btn" data-width="1600" data-height="900">1600x900</button>
+                                <button type="button" class="btn btn-sm btn-outline-secondary preset-size-btn" data-width="1920" data-height="1080">1920x1080</button>
+                            </div>
+                        </div>
+                        <div class="alert alert-light border small mb-0">
+                            Перемещайте изображение мышью, меняйте размеры и сохраняйте. Исходный файл на сервере будет обновлен только после сохранения формы объекта.
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                <button type="button" class="btn btn-primary" id="saveImageEditsBtn">Применить</button>
             </div>
         </div>
     </div>
